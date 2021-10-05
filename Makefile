@@ -37,18 +37,17 @@ clean:
 ## Test the setup
 test:
 	@echo ⚡⚡⚡ Testing ⚡⚡⚡
-	py.test --cov-report term-missing
+	python -m pytest --cov-report term-missing 
 
 
 ## Lint the code
 lint:
 	@echo ⚡⚡⚡ Fixing order of imports using isort ⚡⚡⚡
-	isort -y -sp . --multi-line=3 --trailing-comma --force-grid-wrap=0 --use-parentheses --line-width=88	
+	isort . --float-to-top --multi-line=3 --trailing-comma --force-grid-wrap=0 --use-parentheses --line-width=88	
 	@echo ⚡⚡⚡ Formatting with black ⚡⚡⚡
 	black -l 88 .	
 	@echo ⚡⚡⚡ Linting with flake8 ⚡⚡⚡
 	flake8 . --max-complexity=12 --max-line-length=88 --select=C,E,F,W,B,B950,BLK --ignore=E203,E231,E501,W503 --exclude=.cache
-
 
 	
 
