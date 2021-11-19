@@ -71,6 +71,8 @@ def test_scaled_dot_product_attention():
 
     # Timing comparison
     # import time
+    # from modules.co_mha import _scaled_dot_product_attention_mod
+
     # num_runs = 100
 
     # s = time.time()

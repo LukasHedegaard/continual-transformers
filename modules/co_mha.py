@@ -309,6 +309,9 @@ def _scaled_dot_product_attention_step(
     q_mem_new = torch.cat((q_mem[:, 1:], q_step.unsqueeze(1)), dim=1)
     k_t_mem_new = torch.cat((k_t_mem[:, :, 1:], k_step.unsqueeze(2)), dim=2)
     v_mem_new = torch.cat((v_mem[:, 1:], v_step.unsqueeze(1)), dim=1)
+    # q_mem_new = q_mem
+    # k_t_mem_new = k_t_mem
+    # v_mem_new = v_mem
 
     # Update states for circular buffer
     # q_mem[:, q_i] = q_step
