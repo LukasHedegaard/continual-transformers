@@ -1,5 +1,5 @@
 import math
-import warnings
+from functools import partial
 from typing import List, Optional, Tuple, Union
 
 import torch
@@ -7,9 +7,11 @@ import torch.nn.functional as F
 from continual.module import CoModule, TensorPlaceholder
 from torch import Tensor
 from torch.nn.init import constant_, xavier_normal_, xavier_uniform_
+from torch.nn.modules.activation import MultiheadAttention as _MultiheadAttention
 from torch.nn.modules.linear import NonDynamicallyQuantizableLinear
 from torch.nn.parameter import Parameter
-from torch.overrides import handle_torch_function, has_torch_function
+
+MaybeTensor = Union[Tensor, TensorPlaceholder]
 
 #
 # multihead attention
@@ -193,6 +195,27 @@ def _scaled_dot_product_attention_mod(
 State = Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, int, int, int]
 
 
+def _scaled_dot_product_attention_default_state(
+    B: int,  # batch_size
+    Nt: int,  # num_target
+    Ns: int,  # num_source
+    E: int,  # embedding_dim
+    H: int,  # num_heads
+    init_fn=torch.zeros,
+    dtype=None,
+    device=None,
+):
+    init_fn = partial(init_fn, dtype=dtype, device=device)
+    E = E // H
+    B = B * H
+    a_sum_mem = init_fn((B, Nt - 1))
+    av_mem = init_fn((B, Ns - 1, E))
+    q_mem = init_fn((B, Nt, E))
+    k_t_mem = init_fn((B, E, Ns))
+    v_mem = init_fn((B, Ns, E))
+    return (a_sum_mem, av_mem, q_mem, k_t_mem, v_mem)
+
+
 def _scaled_dot_product_attention_step(
     prev_state: State,
     q_step: Tensor,  # step input (B, E)
@@ -223,9 +246,6 @@ def _scaled_dot_product_attention_step(
     assert attn_mask is None, "attn_mask is not supported yet."
     assert dropout_p == 0.0, "dropout_p is not supported yet."
 
-    B, E = q_step.shape
-    q_step = q_step / math.sqrt(E)
-
     (
         # a,  # (B, Nt, Ns)
         a_sum_mem,  # (B, Nt-1)
@@ -237,6 +257,9 @@ def _scaled_dot_product_attention_step(
         # k_i,  # idx of oldest value
         # v_i,  # idx of oldest value
     ) = prev_state
+
+    B, E = q_step.shape
+    q_step = q_step / math.sqrt(E)
 
     # Get oldest values
     q_step_old = q_mem[:, 0]  # q_i
@@ -294,7 +317,7 @@ def _scaled_dot_product_attention_step(
     av_top = av_mem - av_sub + av_add
 
     av_bottom = torch.bmm(a_top_bottom[:, 1].unsqueeze(1), v_mem[:, 1:]) + (
-        a_bottom_right * v_step
+        a_bottom_right.unsqueeze(1) * v_step
     ).unsqueeze(1)
 
     av = torch.cat(
@@ -309,6 +332,7 @@ def _scaled_dot_product_attention_step(
     q_mem_new = torch.cat((q_mem[:, 1:], q_step.unsqueeze(1)), dim=1)
     k_t_mem_new = torch.cat((k_t_mem[:, :, 1:], k_step.unsqueeze(2)), dim=2)
     v_mem_new = torch.cat((v_mem[:, 1:], v_step.unsqueeze(1)), dim=1)
+
     # q_mem_new = q_mem
     # k_t_mem_new = k_t_mem
     # v_mem_new = v_mem
@@ -323,146 +347,105 @@ def _scaled_dot_product_attention_step(
     # v_i = (v_i + 1) % v_mem.shape[1]
 
     return output, (
-        a_sum,
-        av,
+        a_sum[:, 1:],  # (B, Nt-1)
+        av[:, 1:],  # (B, Ns-1, E)
         q_mem_new,
         k_t_mem_new,
         v_mem_new,
-        # q_i,
-        # k_i,
-        # v_i,
     )
 
 
-class StepwiseScaledDotProductAttention(torch.nn.Module):
-    def __init__(self):
-        ...
+"""
+def mul_saving_scaled_dot_product_attention(
+    self,
+    q_step: Tensor,  # step input
+    k_step: Tensor,  # step input
+    v_step: Tensor,  # step input
+    attn_mask: Optional[Tensor] = None,
+    dropout_p: float = 0.0,
+):
+    assert attn_mask is None, "attn_mask is not supported yet."
+        assert dropout_p == 0.0, "dropout_p is not supported yet."
 
-    def init_state(
-        self, batch_size: int, source_seq_len: int, target_seq_len: int, embed_size: int
-    ):
-        ...
+        B, _, E = q_step.shape
+        q_step = q_step / math.sqrt(E)
 
-    def get_state(self) -> Optional[State]:
-        """Get model state
+        (
+            a,  # (B, Nt, Ns)
+            a_sum_mem,  # (B, Nt)
+            av_mem, # (B, Ns, E)
+            q_mem,  # (B, Nt-1, E)
+            k_mem,  # (B, Ns-1, E)
+            v_mem,  # (B, Ns, E)
+        ) = self.get_state()
 
-        Returns:
-            Optional[State]: A State tuple if the model has been initialised and otherwise None.
-        """
-        ...  # pragma: no cover
+        # Update Query and Key matrices
+        q = torch.cat((q_mem, q_step), dim=1)
+        k = torch.cat((k_mem, k_step), dim=1)
 
-    def set_state(self, state: State):
-        """Set model state
+        # Attention layout O (old), R (new_a_row), C (new_a_col)
+        # O O O C
+        # O O O C
+        # O O O C
+        # R R R R
 
-        Args:
-            state (State): State tuple to set as new internal internal state
-        """
-        ...  # pragma: no cover
+        # (B, 1, E) x (B, E, Ns) -> (B, 1, Ns)
+        new_a_row = torch.exp(torch.bmm(q_step, k.transpose(-2, -1)))
 
-    def clean_state(self):
-        """Clean model state"""
-        ...  # pragma: no cover
+        # (B, Nt-1, E) x (B, E, 1) -> (B, Nt-1, 1)
+        new_a_col = torch.exp(torch.bmm(q_mem, k_step.transpose(-2, -1)))
 
-    def forward(
-        self,
-        q_step: Tensor,  # step input (B, E)
-        k_step: Tensor,  # step input (B, E)
-        v_step: Tensor,  # step input (B, E)
-        attn_mask: Optional[Tensor] = None,
-        dropout_p: float = 0.0,
-    ):
-        ...
+        # TODO: impl
+        # if a_mask is not None:
+        #     a += a_mask
 
+        new_a_sum = torch.cat(
+            (
+                a_sum_mem - a[:, :, -1] + new_a_row[:, :, :-1],
+                new_a_col.sum() + new_a_row[:, :, -1],
+            ),
+            dim=1,
+        )
 
-# def mul_saving_scaled_dot_product_attention(
-#     self,
-#     q_step: Tensor,  # step input
-#     k_step: Tensor,  # step input
-#     v_step: Tensor,  # step input
-#     attn_mask: Optional[Tensor] = None,
-#     dropout_p: float = 0.0,
-# ):
-#     assert attn_mask is None, "attn_mask is not supported yet."
-#         assert dropout_p == 0.0, "dropout_p is not supported yet."
-
-#         B, _, E = q_step.shape
-#         q_step = q_step / math.sqrt(E)
-
-#         (
-#             a,  # (B, Nt, Ns)
-#             a_sum_mem,  # (B, Nt)
-#             av_mem, # (B, Ns, E)
-#             q_mem,  # (B, Nt-1, E)
-#             k_mem,  # (B, Ns-1, E)
-#             v_mem,  # (B, Ns, E)
-#         ) = self.get_state()
-
-#         # Update Query and Key matrices
-#         q = torch.cat((q_mem, q_step), dim=1)
-#         k = torch.cat((k_mem, k_step), dim=1)
-
-#         # Attention layout O (old), R (new_a_row), C (new_a_col)
-#         # O O O C
-#         # O O O C
-#         # O O O C
-#         # R R R R
-
-#         # (B, 1, E) x (B, E, Ns) -> (B, 1, Ns)
-#         new_a_row = torch.exp(torch.bmm(q_step, k.transpose(-2, -1)))
-
-#         # (B, Nt-1, E) x (B, E, 1) -> (B, Nt-1, 1)
-#         new_a_col = torch.exp(torch.bmm(q_mem, k_step.transpose(-2, -1)))
-
-#         # TODO: impl
-#         # if a_mask is not None:
-#         #     a += a_mask
-
-#         new_a_sum = torch.cat(
-#             (
-#                 a_sum_mem - a[:, :, -1] + new_a_row[:, :, :-1],
-#                 new_a_col.sum() + new_a_row[:, :, -1],
-#             ),
-#             dim=1,
-#         )
-
-#         # TODO: impl
-#         # if dropout_p > 0.0:
-#         #     a_exp = F.dropout(a_exp, p=dropout_p)
+        # TODO: impl
+        # if dropout_p > 0.0:
+        #     a_exp = F.dropout(a_exp, p=dropout_p)
 
 
-#         # (B, Nt, Ns) x (B, Ns, E) -> (B, Nt, E)
-#         av = torch.bmm(a_exp, v)
-#         output = av / norm.unsqueeze(-1)
+        # (B, Nt, Ns) x (B, Ns, E) -> (B, Nt, E)
+        av = torch.bmm(a_exp, v)
+        output = av / norm.unsqueeze(-1)
 
-#         # Update states
-#         # Attention update: old values slide up left
-#         # 1 2 3 4
-#         # 2 2 3 4
-#         # 3 3 3 4
-#         # 4 4 4 4
-#         a[:, :-1, :-1] = a[:, 1:, 1:]
-#         a[:, -1, :] = new_a_row
-#         a[:, :-1, -1] = new_a_col
+        # Update states
+        # Attention update: old values slide up left
+        # 1 2 3 4
+        # 2 2 3 4
+        # 3 3 3 4
+        # 4 4 4 4
+        a[:, :-1, :-1] = a[:, 1:, 1:]
+        a[:, -1, :] = new_a_row
+        a[:, :-1, -1] = new_a_col
 
-#         # Attention sum: override
-#         a_sum_mem = new_a_sum[:, 1:]
+        # Attention sum: override
+        a_sum_mem = new_a_sum[:, 1:]
 
-#         # Q, K, V update: slide up
-#         # 1 1 1 1
-#         # 2 2 2 2
-#         # 3 3 3 3
-#         # 4 4 4 4
-#         q_mem = q[:, 1:]
-#         k_mem = k[:, 1:]
-#         v_mem[:, :-1] = v_mem[:, 1:]
-#         v_mem[:, -1] = v_step
+        # Q, K, V update: slide up
+        # 1 1 1 1
+        # 2 2 2 2
+        # 3 3 3 3
+        # 4 4 4 4
+        q_mem = q[:, 1:]
+        k_mem = k[:, 1:]
+        v_mem[:, :-1] = v_mem[:, 1:]
+        v_mem[:, -1] = v_step
 
-#         self.set_state((a, a_sum_mem, q_mem, k_mem, v_mem))
-#         return output, attn
+        self.set_state((a, a_sum_mem, q_mem, k_mem, v_mem))
+        return output, attn
+"""
 
 
-# Copy of multi_head_attention_forward in PyTorch v1.9
-def multi_head_attention_forward(  # noqa: C901
+def multi_head_attention_forward_step(  # noqa: C901
+    prev_state: State,
     query: Tensor,
     key: Tensor,
     value: Tensor,
@@ -486,7 +469,7 @@ def multi_head_attention_forward(  # noqa: C901
     v_proj_weight: Optional[Tensor] = None,
     static_k: Optional[Tensor] = None,
     static_v: Optional[Tensor] = None,
-) -> Tuple[Tensor, Optional[Tensor]]:
+) -> Tuple[Tensor, State]:
     r"""
     Args:
         query, key, value: map a query and a set of key-value pairs to an output.
@@ -512,20 +495,16 @@ def multi_head_attention_forward(  # noqa: C901
         q_proj_weight, k_proj_weight, v_proj_weight, in_proj_bias: input projection weight and bias.
         static_k, static_v: static key and value used for attention operators.
 
-
     Shape:
         Inputs:
-        - query: :math:`(L, N, E)` where L is the target sequence length, N is the batch size, E is
-          the embedding dimension.
-        - key: :math:`(S, N, E)`, where S is the source sequence length, N is the batch size, E is
-          the embedding dimension.
-        - value: :math:`(S, N, E)` where S is the source sequence length, N is the batch size, E is
-          the embedding dimension.
-        - key_padding_mask: :math:`(N, S)` where N is the batch size, S is the source sequence length.
+        - query: :math:`(N, E)` where N is the batch size and E is the embedding dimension.
+        - key: :math:`(N, E)`, where N is the batch size and E is the embedding dimension.
+        - value: :math:`(N, E)` where N is the batch size and E is the embedding dimension.
+        - key_padding_mask: :math:`(N)` where N is the batch size.
           If a ByteTensor is provided, the non-zero positions will be ignored while the zero positions
           will be unchanged. If a BoolTensor is provided, the positions with the
           value of ``True`` will be ignored while the position with the value of ``False`` will be unchanged.
-        - attn_mask: 2D mask :math:`(L, S)` where L is the target sequence length, S is the source sequence length.
+        - attn_mask: 2D mask :math:`(L, S)` where L is the target sequence length.
           3D mask :math:`(N*num_heads, L, S)` where N is the batch size, L is the target sequence length,
           S is the source sequence length. attn_mask ensures that position i is allowed to attend the unmasked
           positions. If a ByteTensor is provided, the non-zero positions are not allowed to attend
@@ -533,57 +512,28 @@ def multi_head_attention_forward(  # noqa: C901
           are not allowed to attend while ``False`` values will be unchanged. If a FloatTensor
           is provided, it will be added to the attention weight.
         - static_k: :math:`(N*num_heads, S, E/num_heads)`, where S is the source sequence length,
-          N is the batch size, E is the embedding dimension. E/num_heads is the head dimension.
+          N is the batch size and E is the embedding dimension. E/num_heads is the head dimension.
         - static_v: :math:`(N*num_heads, S, E/num_heads)`, where S is the source sequence length,
-          N is the batch size, E is the embedding dimension. E/num_heads is the head dimension.
+          N is the batch size and E is the embedding dimension. E/num_heads is the head dimension.
 
         Outputs:
-        - attn_output: :math:`(L, N, E)` where L is the target sequence length, N is the batch size,
-          E is the embedding dimension.
-        - attn_output_weights: :math:`(N, L, S)` where N is the batch size,
-          L is the target sequence length, S is the source sequence length.
+        - attn_output: :math:`(N, E)` where N is the batch size and E is the embedding dimension.
+        - state: Internal state for continual computataion.
     """
-    tens_ops = (
-        query,
-        key,
-        value,
-        in_proj_weight,
-        in_proj_bias,
-        bias_k,
-        bias_v,
-        out_proj_weight,
-        out_proj_bias,
-    )
-    if has_torch_function(tens_ops):  # TODO: Handle this branch
-        return handle_torch_function(
-            multi_head_attention_forward,
-            tens_ops,
-            query,
-            key,
-            value,
-            embed_dim_to_check,
-            num_heads,
-            in_proj_weight,
-            in_proj_bias,
-            bias_k,
-            bias_v,
-            add_zero_attn,
-            dropout_p,
-            out_proj_weight,
-            out_proj_bias,
-            training=training,
-            key_padding_mask=key_padding_mask,
-            need_weights=need_weights,
-            attn_mask=attn_mask,
-            use_separate_proj_weight=use_separate_proj_weight,
-            q_proj_weight=q_proj_weight,
-            k_proj_weight=k_proj_weight,
-            v_proj_weight=v_proj_weight,
-            static_k=static_k,
-            static_v=static_v,
-        )
+    assert add_zero_attn is False, "add_zero_attn is not supported"
+    assert key_padding_mask is None, "key_padding_mask is not supported"
+    assert attn_mask is None, "attn_mask is not supported"
+    assert static_k is None, "static_k is not supported"
+    assert static_v is None, "static_v is not supported"
 
     # set up shape vars
+    assert len(query.shape) == 2, "query should have shape (N, E)"
+    assert len(key.shape) == 2, "key should have shape (N, E)"
+    assert len(value.shape) == 2, "value should have shape (N, E)"
+    query = query.unsqueeze(0)  # shape = (1, N, E)
+    key = key.unsqueeze(0)  # shape = (1, N, E)
+    value = value.unsqueeze(0)  # shape = (1, N, E)
+
     tgt_len, bsz, embed_dim = query.shape
     src_len, _, _ = key.shape
     assert (
@@ -607,9 +557,7 @@ def multi_head_attention_forward(  # noqa: C901
             key.shape == value.shape
         ), f"key shape {key.shape} does not match value shape {value.shape}"
 
-    #
     # compute in-projection
-    #
     if not use_separate_proj_weight:
         # Note: Also works for single step (unqueeze dim 0)
         q, k, v = _in_projection_packed(query, key, value, in_proj_weight, in_proj_bias)
@@ -639,43 +587,6 @@ def multi_head_attention_forward(  # noqa: C901
             b_v,
         )
 
-    # prep attention mask # TODO: Handle this branch
-    if attn_mask is not None:
-        if attn_mask.dtype == torch.uint8:
-            warnings.warn(
-                "Byte tensor for attn_mask in nn.MultiheadAttention is deprecated. Use bool tensor instead."
-            )
-            attn_mask = attn_mask.to(torch.bool)
-        else:
-            assert (
-                attn_mask.is_floating_point() or attn_mask.dtype == torch.bool
-            ), f"Only float, byte, and bool types are supported for attn_mask, not {attn_mask.dtype}"
-        # ensure attn_mask's dim is 3
-        if attn_mask.dim() == 2:
-            correct_2d_size = (tgt_len, src_len)
-            if attn_mask.shape != correct_2d_size:
-                raise RuntimeError(
-                    f"The shape of the 2D attn_mask is {attn_mask.shape}, but should be {correct_2d_size}."
-                )
-            attn_mask = attn_mask.unsqueeze(0)
-        elif attn_mask.dim() == 3:
-            correct_3d_size = (bsz * num_heads, tgt_len, src_len)
-            if attn_mask.shape != correct_3d_size:
-                raise RuntimeError(
-                    f"The shape of the 3D attn_mask is {attn_mask.shape}, but should be {correct_3d_size}."
-                )
-        else:
-            raise RuntimeError(
-                f"attn_mask's dimension {attn_mask.dim()} is not supported"
-            )
-
-    # prep key padding mask  # TODO: Handle this branch
-    if key_padding_mask is not None and key_padding_mask.dtype == torch.uint8:
-        warnings.warn(
-            "Byte tensor for key_padding_mask in nn.MultiheadAttention is deprecated. Use bool tensor instead."
-        )
-        key_padding_mask = key_padding_mask.to(torch.bool)
-
     # add bias along batch dimension (currently second) TODO: Handle this branch
     if bias_k is not None and bias_v is not None:
         assert static_k is None, "bias cannot be added to static key."
@@ -686,52 +597,13 @@ def multi_head_attention_forward(  # noqa: C901
             attn_mask = F.pad(attn_mask, (0, 1))
         if key_padding_mask is not None:
             key_padding_mask = F.pad(key_padding_mask, (0, 1))
-    else:
-        assert bias_k is None
-        assert bias_v is None
 
-    #
     # reshape q, k, v for multihead attention and make em batch first
-    #
     q = q.contiguous().view(tgt_len, bsz * num_heads, head_dim).transpose(0, 1)
-    if static_k is None:
-        k = k.contiguous().view(-1, bsz * num_heads, head_dim).transpose(0, 1)
-    else:  # TODO: Handle this branch
-        # TODO finish disentangling control flow so we don't do in-projections when statics are passed
-        assert (
-            static_k.size(0) == bsz * num_heads
-        ), f"expecting static_k.size(0) of {bsz * num_heads}, but got {static_k.size(0)}"
-        assert (
-            static_k.size(2) == head_dim
-        ), f"expecting static_k.size(2) of {head_dim}, but got {static_k.size(2)}"
-        k = static_k
-    if static_v is None:
-        v = v.contiguous().view(-1, bsz * num_heads, head_dim).transpose(0, 1)
-    else:  # TODO: Handle this branch
-        # TODO finish disentangling control flow so we don't do in-projections when statics are passed
-        assert (
-            static_v.size(0) == bsz * num_heads
-        ), f"expecting static_v.size(0) of {bsz * num_heads}, but got {static_v.size(0)}"
-        assert (
-            static_v.size(2) == head_dim
-        ), f"expecting static_v.size(2) of {head_dim}, but got {static_v.size(2)}"
-        v = static_v
 
-    # Note: At this point, q,k,v have dim (seq_len, bs * num_heads, head_dim)
+    k = k.contiguous().view(-1, bsz * num_heads, head_dim).transpose(0, 1)
 
-    # add zero attention along batch dimension (now first)
-    if add_zero_attn:  # TODO: Handle this branch
-        zero_attn_shape = (bsz * num_heads, 1, head_dim)
-        k = torch.cat(
-            [k, torch.zeros(zero_attn_shape, dtype=k.dtype, device=k.device)], dim=1
-        )
-        v = torch.cat(
-            [v, torch.zeros(zero_attn_shape, dtype=v.dtype, device=v.device)], dim=1
-        )
-        if attn_mask is not None:
-            attn_mask = F.pad(attn_mask, (0, 1))
-        if key_padding_mask is not None:
-            key_padding_mask = F.pad(key_padding_mask, (0, 1))
+    v = v.contiguous().view(-1, bsz * num_heads, head_dim).transpose(0, 1)
 
     # update source sequence length after adjustments
     src_len = k.size(1)
@@ -764,33 +636,25 @@ def multi_head_attention_forward(  # noqa: C901
     if not training:
         dropout_p = 0.0
 
-    #
     # (deep breath) calculate attention and out projection
-    #
-    attn_output, attn_output_weights = _scaled_dot_product_attention_mod(
-        q, k, v, attn_mask, dropout_p
+    q, k, v = q.squeeze(1), k.squeeze(1), v.squeeze(1)
+    attn_output, new_state = _scaled_dot_product_attention_step(
+        prev_state, q, k, v, attn_mask, dropout_p
     )
-    attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
+    attn_output = attn_output.transpose(0, 1).contiguous().view(-1, bsz, embed_dim)
     attn_output = F.linear(attn_output, out_proj_weight, out_proj_bias)
 
-    if need_weights:
-        # average attention weights over heads
-        attn_output_weights = attn_output_weights.view(bsz, num_heads, tgt_len, src_len)
-        return attn_output, attn_output_weights.sum(dim=1) / num_heads
-    else:
-        return attn_output, None
+    return attn_output, new_state
 
 
-# Copy of MultiheadAttention in Pytorch v1.9
-class MultiheadAttention(CoModule, torch.nn.Module):
-    r"""Allows the model to jointly attend to information
-    from different representation subspaces.
-    See `Attention Is All You Need <https://arxiv.org/abs/1706.03762>`_
-
-    .. math::
-        \text{MultiHead}(Q, K, V) = \text{Concat}(head_1,\dots,head_h)W^O
-
-    where :math:`head_i = \text{Attention}(QW_i^Q, KW_i^K, VW_i^V)`.
+# Corresponds to MultiheadAttention in Pytorch v1.9
+class CoReMultiheadAttention(CoModule, torch.nn.Module):
+    r"""
+    Continual Retrospective MultiHeadAttention.
+    It augments the MultiHeadAttention in PyTorch with
+    `forward_step` / `forward_steps` functions, in which one / more
+    query, key, and value tokens are passed to yield the multihead attention
+    corresponding to the last (self.sequence_len) tokens.
 
     Args:
         embed_dim: total dimension of the model.
@@ -831,11 +695,10 @@ class MultiheadAttention(CoModule, torch.nn.Module):
         batch_first=False,
         device=None,
         dtype=None,
-        source_len=None,
-        target_len=None,
+        sequence_len=None,
     ) -> None:
         factory_kwargs = {"device": device, "dtype": dtype}
-        super(MultiheadAttention, self).__init__()
+        torch.nn.Module.__init__(self)
         self.embed_dim = embed_dim
         self.kdim = kdim if kdim is not None else embed_dim
         self.vdim = vdim if vdim is not None else embed_dim
@@ -848,6 +711,8 @@ class MultiheadAttention(CoModule, torch.nn.Module):
         assert (
             self.head_dim * num_heads == self.embed_dim
         ), "embed_dim must be divisible by num_heads"
+
+        self.sequence_len = sequence_len
 
         if self._qkv_same_embed_dim is False:
             self.q_proj_weight = Parameter(
@@ -902,20 +767,28 @@ class MultiheadAttention(CoModule, torch.nn.Module):
         if self.bias_v is not None:
             xavier_normal_(self.bias_v)
 
-    def __setstate__(self, state):
-        # Support loading old MultiheadAttention checkpoints generated by v1.1.0
-        if "_qkv_same_embed_dim" not in state:
-            state["_qkv_same_embed_dim"] = True
-
-        super(MultiheadAttention, self).__setstate__(state)
-
     def get_state(self) -> Optional[State]:
         """Get model state
 
         Returns:
             Optional[State]: A State tuple if the model has been initialised and otherwise None.
         """
-        ...  # pragma: no cover
+        if (
+            getattr(self, "a_sum_mem", None) is not None
+            and getattr(self, "av_mem", None) is not None
+            and getattr(self, "q_mem", None) is not None
+            and getattr(self, "k_t_mem", None) is not None
+            and getattr(self, "v_mem", None) is not None
+            and getattr(self, "stride_index", None) is not None
+        ):
+            return (
+                self.a_sum_mem,
+                self.av_mem,
+                self.q_mem,
+                self.k_t_mem,
+                self.v_mem,
+                self.stride_index,
+            )
 
     def set_state(self, state: State):
         """Set model state
@@ -923,11 +796,29 @@ class MultiheadAttention(CoModule, torch.nn.Module):
         Args:
             state (State): State tuple to set as new internal internal state
         """
-        ...  # pragma: no cover
+        (
+            self.a_sum_mem,
+            self.av_mem,
+            self.q_mem,
+            self.k_t_mem,
+            self.v_mem,
+            self.stride_index,
+        ) = state
 
     def clean_state(self):
         """Clean model state"""
-        ...  # pragma: no cover
+        if hasattr(self, "a_sum_mem"):
+            del self.a_sum_mem
+        if hasattr(self, "av_mem"):
+            del self.av_mem
+        if hasattr(self, "q_mem"):
+            del self.q_mem
+        if hasattr(self, "k_t_mem"):
+            del self.k_t_mem
+        if hasattr(self, "v_mem"):
+            del self.v_mem
+        if hasattr(self, "stride_index"):
+            del self.stride_index
 
     def forward(
         self,
@@ -978,81 +869,202 @@ class MultiheadAttention(CoModule, torch.nn.Module):
             - attn_output_weights: :math:`(N, L, S)` where N is the batch size,
               L is the target sequence length, S is the source sequence length.
         """
-        if self.batch_first:
-            query, key, value = [x.transpose(1, 0) for x in (query, key, value)]
+        return _MultiheadAttention.forward(
+            self, query, key, value, key_padding_mask, need_weights, attn_mask
+        )
 
-        if not self._qkv_same_embed_dim:
-            attn_output, attn_output_weights = multi_head_attention_forward(
-                query,
-                key,
-                value,
-                self.embed_dim,
-                self.num_heads,
-                self.in_proj_weight,
-                self.in_proj_bias,
-                self.bias_k,
-                self.bias_v,
-                self.add_zero_attn,
-                self.dropout,
-                self.out_proj.weight,
-                self.out_proj.bias,
-                training=self.training,
-                key_padding_mask=key_padding_mask,
-                need_weights=need_weights,
-                attn_mask=attn_mask,
-                use_separate_proj_weight=True,
-                q_proj_weight=self.q_proj_weight,
-                k_proj_weight=self.k_proj_weight,
-                v_proj_weight=self.v_proj_weight,
-            )
-        else:
-            attn_output, attn_output_weights = multi_head_attention_forward(
-                query,
-                key,
-                value,
-                self.embed_dim,
-                self.num_heads,
-                self.in_proj_weight,
-                self.in_proj_bias,
-                self.bias_k,
-                self.bias_v,
-                self.add_zero_attn,
-                self.dropout,
-                self.out_proj.weight,
-                self.out_proj.bias,
-                training=self.training,
-                key_padding_mask=key_padding_mask,
-                need_weights=need_weights,
-                attn_mask=attn_mask,
-            )
-        if self.batch_first:
-            return attn_output.transpose(1, 0), attn_output_weights
-        else:
-            return attn_output, attn_output_weights
-
-    def forward_step(
-        self, input: Tensor, update_state=True
-    ) -> Union[Tensor, TensorPlaceholder]:
+    def _forward_step(
+        self,
+        query: Tensor,
+        key: Tensor,
+        value: Tensor,
+        prev_state: State = None,
+        *args,
+        **kwargs,
+    ) -> Tuple[MaybeTensor, State]:
         """Forward computation for a single step with state initialisation
 
         Args:
-            input (Tensor): Layer input.
-            update_state (bool): Whether internal state should be updated during this operation.
+            query, key, value: step inputs of shape `(B, E)` where B is the batch size and E is the embedding dimension.
 
         Returns:
-            Union[Tensor, TensorPlaceholder]: Step output. This will be a placeholder while the module initialises and every (stride - 1) : stride.
+            Tuple[MaybeTensor, State]: Step output and new state.
         """
-        ...
+        batch_size = query.shape[0]
+        if prev_state is None:
+            prev_state = (
+                *_scaled_dot_product_attention_default_state(
+                    batch_size,
+                    self.sequence_len,
+                    self.sequence_len,
+                    self.embed_dim,
+                    self.num_heads,
+                    dtype=query.dtype,
+                    device=query.device,
+                ),
+                -self.sequence_len,
+            )
 
-    def forward_steps(self, input: Tensor, pad_end=False, update_state=True) -> Tensor:
+        o, new_state = multi_head_attention_forward_step(
+            prev_state[:-1],
+            query,
+            key,
+            value,
+            self.embed_dim,
+            self.num_heads,
+            self.in_proj_weight,
+            self.in_proj_bias,
+            self.bias_k,
+            self.bias_v,
+            self.add_zero_attn,
+            self.dropout,
+            self.out_proj.weight,
+            self.out_proj.bias,
+            training=self.training,
+        )
+        stride_index = prev_state[-1]
+        if stride_index < 0:
+            stride_index += 1
+
+        new_state = (*new_state, stride_index)
+
+        return (
+            TensorPlaceholder(o.shape) if stride_index < 0 else o,
+            new_state,
+        )
+
+    def forward_step(
+        self,
+        query: Tensor,
+        key: Tensor,
+        value: Tensor,
+        update_state=True,
+        *args,
+        **kwargs,
+    ) -> MaybeTensor:
+        r"""
+        Args:
+            query, key, value: step_inputs for mapping a query and a set of key-value pairs to an output.
+                See "Attention Is All You Need" for more details.
+
+        Shapes for inputs:
+            - query: :math:`(N, E)` where L is the target sequence length, N is the batch size, E is
+              the embedding dimension.
+            - key: :math:`(N, E)`, where S is the source sequence length, N is the batch size, E is
+              the embedding dimension.
+            - value: :math:`(N, E)` where S is the source sequence length, N is the batch size, E is
+              the embedding dimension.
+
+        Shapes for outputs:
+            - attn_output: :math:`(L, N, E)` where L is the target sequence length, N is the batch size,
+              E is the embedding dimension. :math:`(N, L, E)` if ``batch_first`` is ``True``.
+            - new_state: Tuple of internal states.
+        """
+        tmp_state = self.get_state()
+        # TODO: For the  efficient memory implementation, we will want to clone state here
+        # if not update_state and state:
+        #     state = clone(state)
+        o, tmp_state = self._forward_step(query, key, value, tmp_state)
+
+        if self.batch_first and not isinstance(o, TensorPlaceholder):
+            o = o.transpose(1, 0)
+
+        if update_state:
+            self.set_state(tmp_state)
+
+        return o
+
+    def forward_steps(
+        self,
+        query: Tensor,
+        key: Tensor,
+        value: Tensor,
+        pad_end=False,
+        update_state=True,
+        *args,
+        **kwargs,
+    ) -> MaybeTensor:
         """Forward computation for multiple steps with state initialisation
 
         Args:
-            input (Tensor): Layer input.
-            pad_end (bool): Whether results for temporal padding at sequence end should be included.
+            query (Tensor): query.
+            key (Tensor): key.
+            value (Tensor): value.
+            pad_end (bool): Dummy parameter added to fulfill interface.
             update_state (bool): Whether internal state should be updated during this operation.
 
         Returns:
-            Tensor: Layer output
+            Tensor: Layer output corresponding to the self-attention for the last step
         """
-        ...
+        if self.batch_first:
+            query, key, value = [x.transpose(1, 0) for x in (query, key, value)]
+
+        tmp_state = self.get_state()
+
+        # TODO: For the efficient memory implementation, we will want to clone state here
+        # if not update_state and tmp_state:
+        #     tmp_state = clone(tmp_state)
+
+        L = query.shape[0]
+        assert L == key.shape[0]
+        assert L == value.shape[0]
+        for t in range(L):
+            o, tmp_state = self._forward_step(query[t], key[t], value[t], tmp_state)
+
+        if self.batch_first and not isinstance(o, TensorPlaceholder):
+            o = o.transpose(1, 0)
+
+        if update_state:
+            self.set_state(tmp_state)
+
+        return o
+
+    @property
+    def receptive_field(self) -> int:
+        return self.sequence_len
+
+    @staticmethod
+    def build_from(
+        module: _MultiheadAttention, sequence_len: int, **kwargs
+    ) -> "CoReMultiheadAttention":
+        comodule = CoReMultiheadAttention(
+            **{
+                **dict(
+                    embed_dim=module.embed_dim,
+                    num_heads=module.num_heads,
+                    dropout=module.dropout,
+                    bias=module.in_proj_bias is not None,
+                    add_bias_kv=module.bias_k is not None,
+                    add_zero_attn=module.add_zero_attn,
+                    kdim=module.kdim,
+                    vdim=module.vdim,
+                    batch_first=module.batch_first,
+                    device=module.out_proj.weight.device,
+                    dtype=module.out_proj.weight.dtype,
+                    sequence_len=sequence_len,
+                ),
+                **kwargs,
+            }
+        )
+        with torch.no_grad():
+            if module.in_proj_weight is not None:
+                comodule.in_proj_weight.copy_(module.in_proj_weight)
+
+            if module.q_proj_weight is not None:
+                comodule.q_proj_weight.copy_(module.q_proj_weight)
+            if module.k_proj_weight is not None:
+                comodule.k_proj_weight.copy_(module.k_proj_weight)
+            if module.v_proj_weight is not None:
+                comodule.v_proj_weight.copy_(module.v_proj_weight)
+
+            if module.in_proj_bias is not None:
+                comodule.in_proj_bias.copy_(module.in_proj_bias)
+            if module.out_proj is not None:
+                comodule.out_proj.weight.copy_(module.out_proj.weight)
+                if module.out_proj.bias is not None:
+                    comodule.out_proj.bias.copy_(module.out_proj.bias)
+            if module.bias_k is not None:
+                comodule.bias_k.copy_(module.bias_k)
+            if module.bias_v is not None:
+                comodule.bias_v.copy_(module.bias_v)
+        return comodule
