@@ -125,9 +125,11 @@ def test_scaled_dot_product_attention_step():
     target2, _ = _scaled_dot_product_attention(query2, key2, value2)
 
     prev_state = (
-        attn_sum[:, 1:],
+        # attn_sum[:, 1:],
+        attn_sum[:, 1:].unsqueeze(-1),
         av[:, 1:],
-        query1 / math.sqrt(E),
+        # query1 / math.sqrt(E),
+        query1[:, 1:] / math.sqrt(E),
         key1.transpose(-2, -1),
         value1,
         # 0,

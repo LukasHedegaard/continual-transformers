@@ -208,12 +208,12 @@ def _scaled_dot_product_attention_default_state(
     init_fn = partial(init_fn, dtype=dtype, device=device)
     E = E // H
     B = B * H
-    a_sum_mem = init_fn((B, Nt - 1))
-    av_mem = init_fn((B, Ns - 1, E))
-    q_mem = init_fn((B, Nt, E))
-    k_t_mem = init_fn((B, E, Ns))
-    v_mem = init_fn((B, Ns, E))
-    return (a_sum_mem, av_mem, q_mem, k_t_mem, v_mem)
+    d_mem = init_fn((B, Nt - 1, 1))
+    AV_mem = init_fn((B, Ns - 1, E))
+    Q_mem = init_fn((B, Nt - 1, E))
+    K_T_mem = init_fn((B, E, Ns))
+    V_mem = init_fn((B, Ns, E))
+    return (d_mem, AV_mem, Q_mem, K_T_mem, V_mem)
 
 
 def _scaled_dot_product_attention_step(
@@ -225,10 +225,8 @@ def _scaled_dot_product_attention_step(
     dropout_p: float = 0.0,
 ) -> Tuple[Tensor, State]:
     r"""
-    Computes scaled dot product attention on query, key and value tensors, using
-    an optional attention mask if passed, and applying dropout if a probability
-    greater than 0.0 is specified.
-    Returns a tensor pair containing attended values and attention weights.
+    Computes the Continual Retroactive Scaled Dot-Product Attention on query, key and value tensors.
+    Returns attended values and updated states.
 
     Args:
         q_step, k_step, v_step: query, key and value tensors for a step. See Shape section for shape details.
@@ -247,201 +245,73 @@ def _scaled_dot_product_attention_step(
     assert dropout_p == 0.0, "dropout_p is not supported yet."
 
     (
-        # a,  # (B, Nt, Ns)
-        a_sum_mem,  # (B, Nt-1)
-        av_mem,  # (B, Ns-1, E)
-        q_mem,  # (B, Nt, E)
-        k_t_mem,  # (B, E, Ns)
-        v_mem,  # (B, Ns, E)
-        # q_i,  # idx of oldest value
-        # k_i,  # idx of oldest value
-        # v_i,  # idx of oldest value
+        d_mem,  # (B, Nt-1)
+        AV_mem,  # (B, Ns-1, E)
+        Q_mem,  # (B, Nt-1, E)
+        K_T_mem,  # (B, E, Ns)
+        V_mem,  # (B, Ns, E)
     ) = prev_state
 
     B, E = q_step.shape
     q_step = q_step / math.sqrt(E)
 
-    # Get oldest values
-    q_step_old = q_mem[:, 0]  # q_i
-    k_t_step_old = k_t_mem[:, :, 0]  # k_i
-
-    # Compute oldest and new attn values
-    # Old values are always subtracted, so we can do it here already
-    q_sel = torch.stack((q_step_old, q_step), dim=1)
-    k_sel = torch.stack((k_t_step_old, k_step), dim=2)
-
-    # Compute oldest and newest entries in exp attention matrix
-    #   T T T
+    # Compute oldest and newest entries in attention matrix A:
     # L . . . R
     # L . . . R
     # L . . . R
-    #   B B B BR
+    #   B B B B
 
-    # [T T T; B B B], shape=(B, 2, Ns-1)
-    a_top_bottom = torch.exp(torch.bmm(q_sel, k_t_mem[:, :, 1:]))
+    # Left column attention values
+    A_left = torch.exp(torch.bmm(Q_mem, K_T_mem[:, :, 0].unsqueeze(-1)))
 
-    # [L L L; R R R]^T, shape=(B, Nt-1, 2)
-    a_left_right = torch.exp(torch.bmm(q_mem[:, 1:, :], k_sel))
+    # Right column attention values
+    A_right = torch.exp(torch.bmm(Q_mem, k_step.unsqueeze(-1)))
 
-    # BR
-    a_bottom_right = torch.exp((q_step * k_step).sum(dim=1))
+    # Update Q_mem and K_mem
+    Q_mem_new = torch.roll(Q_mem, shifts=-1, dims=(1,))
+    Q_mem_new[:, -1] = q_step
 
-    # TODO
-    # if a_mask is not None:
-    #     a += a_mask
+    K_T_mem_new = torch.roll(K_T_mem, shifts=-1, dims=(2,))
+    K_T_mem_new[:, :, -1] = k_step
 
-    # TODO
-    # if dropout_p > 0.0:
-    #     a_exp = F.dropout(a_exp, p=dropout_p)
+    # Bottom row attention values
+    A_bottom = torch.exp(torch.bmm(q_step.unsqueeze(1), K_T_mem_new))
 
-    # Compute normalisation constants
-    a_sum = torch.cat(
+    # Compute normalisation
+    d = torch.cat(
         (
-            a_sum_mem + a_left_right[:, :, 1] - a_left_right[:, :, 0],
-            (a_top_bottom[:, 1].sum(1) + a_bottom_right).unsqueeze(1),
+            d_mem - A_left + A_right,
+            (A_bottom.sum(-1)).unsqueeze(-1),
         ),
         dim=1,
     )
 
-    # Compute av matrix
-    av_sub = torch.bmm(
-        a_left_right[:, :, 0].unsqueeze(2),
-        v_mem[:, 0].unsqueeze(1),
-    )
+    # Compute AV matrix top
+    AV_sub = torch.bmm(A_left, V_mem[:, 0].unsqueeze(1))
+    AV_add = torch.bmm(A_right, v_step.unsqueeze(1))
+    AV_top = AV_mem - AV_sub + AV_add
 
-    av_add = torch.bmm(
-        a_left_right[:, :, 1].unsqueeze(2),
-        v_step.unsqueeze(1),
-    )
+    # Update V_mem
+    V_mem_new = torch.roll(V_mem, shifts=-1, dims=(1,))
+    V_mem_new[:, -1] = v_step
 
-    av_top = av_mem - av_sub + av_add
+    # Compute AV_bottom
+    AV_bottom = torch.bmm(A_bottom, V_mem_new)
 
-    av_bottom = torch.bmm(a_top_bottom[:, 1].unsqueeze(1), v_mem[:, 1:]) + (
-        a_bottom_right.unsqueeze(1) * v_step
-    ).unsqueeze(1)
-
-    av = torch.cat(
-        (av_top, av_bottom),
-        dim=1,
-    )
+    AV_new = torch.cat((AV_top, AV_bottom), dim=1)
 
     # Compute final output
-    output = av / a_sum.unsqueeze(-1)
+    output = AV_new / d
 
-    # Update states
-    q_mem_new = torch.cat((q_mem[:, 1:], q_step.unsqueeze(1)), dim=1)
-    k_t_mem_new = torch.cat((k_t_mem[:, :, 1:], k_step.unsqueeze(2)), dim=2)
-    v_mem_new = torch.cat((v_mem[:, 1:], v_step.unsqueeze(1)), dim=1)
-
-    # q_mem_new = q_mem
-    # k_t_mem_new = k_t_mem
-    # v_mem_new = v_mem
-
-    # Update states for circular buffer
-    # q_mem[:, q_i] = q_step
-    # k_t_mem[:, k_i] = k_step
-    # v_mem[:, v_i] = v_step
-
-    # q_i = (q_i + 1) % q_mem.shape[1]
-    # k_i = (k_i + 1) % k_t_mem.shape[2]
-    # v_i = (v_i + 1) % v_mem.shape[1]
-
-    return output, (
-        a_sum[:, 1:],  # (B, Nt-1)
-        av[:, 1:],  # (B, Ns-1, E)
-        q_mem_new,
-        k_t_mem_new,
-        v_mem_new,
+    new_states = (
+        d[:, 1:],  # (B, Nt-1)
+        AV_new[:, 1:],  # (B, Ns-1, E)
+        Q_mem_new,
+        K_T_mem_new,
+        V_mem_new,
     )
 
-
-"""
-def mul_saving_scaled_dot_product_attention(
-    self,
-    q_step: Tensor,  # step input
-    k_step: Tensor,  # step input
-    v_step: Tensor,  # step input
-    attn_mask: Optional[Tensor] = None,
-    dropout_p: float = 0.0,
-):
-    assert attn_mask is None, "attn_mask is not supported yet."
-        assert dropout_p == 0.0, "dropout_p is not supported yet."
-
-        B, _, E = q_step.shape
-        q_step = q_step / math.sqrt(E)
-
-        (
-            a,  # (B, Nt, Ns)
-            a_sum_mem,  # (B, Nt)
-            av_mem, # (B, Ns, E)
-            q_mem,  # (B, Nt-1, E)
-            k_mem,  # (B, Ns-1, E)
-            v_mem,  # (B, Ns, E)
-        ) = self.get_state()
-
-        # Update Query and Key matrices
-        q = torch.cat((q_mem, q_step), dim=1)
-        k = torch.cat((k_mem, k_step), dim=1)
-
-        # Attention layout O (old), R (new_a_row), C (new_a_col)
-        # O O O C
-        # O O O C
-        # O O O C
-        # R R R R
-
-        # (B, 1, E) x (B, E, Ns) -> (B, 1, Ns)
-        new_a_row = torch.exp(torch.bmm(q_step, k.transpose(-2, -1)))
-
-        # (B, Nt-1, E) x (B, E, 1) -> (B, Nt-1, 1)
-        new_a_col = torch.exp(torch.bmm(q_mem, k_step.transpose(-2, -1)))
-
-        # TODO: impl
-        # if a_mask is not None:
-        #     a += a_mask
-
-        new_a_sum = torch.cat(
-            (
-                a_sum_mem - a[:, :, -1] + new_a_row[:, :, :-1],
-                new_a_col.sum() + new_a_row[:, :, -1],
-            ),
-            dim=1,
-        )
-
-        # TODO: impl
-        # if dropout_p > 0.0:
-        #     a_exp = F.dropout(a_exp, p=dropout_p)
-
-
-        # (B, Nt, Ns) x (B, Ns, E) -> (B, Nt, E)
-        av = torch.bmm(a_exp, v)
-        output = av / norm.unsqueeze(-1)
-
-        # Update states
-        # Attention update: old values slide up left
-        # 1 2 3 4
-        # 2 2 3 4
-        # 3 3 3 4
-        # 4 4 4 4
-        a[:, :-1, :-1] = a[:, 1:, 1:]
-        a[:, -1, :] = new_a_row
-        a[:, :-1, -1] = new_a_col
-
-        # Attention sum: override
-        a_sum_mem = new_a_sum[:, 1:]
-
-        # Q, K, V update: slide up
-        # 1 1 1 1
-        # 2 2 2 2
-        # 3 3 3 3
-        # 4 4 4 4
-        q_mem = q[:, 1:]
-        k_mem = k[:, 1:]
-        v_mem[:, :-1] = v_mem[:, 1:]
-        v_mem[:, -1] = v_step
-
-        self.set_state((a, a_sum_mem, q_mem, k_mem, v_mem))
-        return output, attn
-"""
+    return output, new_states
 
 
 def multi_head_attention_forward_step(  # noqa: C901
@@ -650,7 +520,7 @@ def multi_head_attention_forward_step(  # noqa: C901
 # Corresponds to MultiheadAttention in Pytorch v1.9
 class CoReMultiheadAttention(CoModule, torch.nn.Module):
     r"""
-    Continual Retrospective MultiHeadAttention.
+    Continual Retroactive MultiHeadAttention.
     It augments the MultiHeadAttention in PyTorch with
     `forward_step` / `forward_steps` functions, in which one / more
     query, key, and value tokens are passed to yield the multihead attention
@@ -774,19 +644,19 @@ class CoReMultiheadAttention(CoModule, torch.nn.Module):
             Optional[State]: A State tuple if the model has been initialised and otherwise None.
         """
         if (
-            getattr(self, "a_sum_mem", None) is not None
-            and getattr(self, "av_mem", None) is not None
-            and getattr(self, "q_mem", None) is not None
-            and getattr(self, "k_t_mem", None) is not None
-            and getattr(self, "v_mem", None) is not None
+            getattr(self, "d_mem", None) is not None
+            and getattr(self, "AV_mem", None) is not None
+            and getattr(self, "Q_mem", None) is not None
+            and getattr(self, "K_T_mem", None) is not None
+            and getattr(self, "V_mem", None) is not None
             and getattr(self, "stride_index", None) is not None
         ):
             return (
-                self.a_sum_mem,
-                self.av_mem,
-                self.q_mem,
-                self.k_t_mem,
-                self.v_mem,
+                self.d_mem,
+                self.AV_mem,
+                self.Q_mem,
+                self.K_T_mem,
+                self.V_mem,
                 self.stride_index,
             )
 
@@ -797,26 +667,26 @@ class CoReMultiheadAttention(CoModule, torch.nn.Module):
             state (State): State tuple to set as new internal internal state
         """
         (
-            self.a_sum_mem,
-            self.av_mem,
-            self.q_mem,
-            self.k_t_mem,
-            self.v_mem,
+            self.d_mem,
+            self.AV_mem,
+            self.Q_mem,
+            self.K_T_mem,
+            self.V_mem,
             self.stride_index,
         ) = state
 
     def clean_state(self):
         """Clean model state"""
-        if hasattr(self, "a_sum_mem"):
-            del self.a_sum_mem
-        if hasattr(self, "av_mem"):
-            del self.av_mem
-        if hasattr(self, "q_mem"):
-            del self.q_mem
-        if hasattr(self, "k_t_mem"):
-            del self.k_t_mem
-        if hasattr(self, "v_mem"):
-            del self.v_mem
+        if hasattr(self, "d_mem"):
+            del self.d_mem
+        if hasattr(self, "AV_mem"):
+            del self.AV_mem
+        if hasattr(self, "Q_mem"):
+            del self.Q_mem
+        if hasattr(self, "K_T_mem"):
+            del self.K_T_mem
+        if hasattr(self, "V_mem"):
+            del self.V_mem
         if hasattr(self, "stride_index"):
             del self.stride_index
 
@@ -1001,14 +871,13 @@ class CoReMultiheadAttention(CoModule, torch.nn.Module):
 
         tmp_state = self.get_state()
 
-        # TODO: For the efficient memory implementation, we will want to clone state here
-        # if not update_state and tmp_state:
-        #     tmp_state = clone(tmp_state)
+        if not update_state and tmp_state:
+            backup_state = tmp_state.clone()
 
-        L = query.shape[0]
-        assert L == key.shape[0]
-        assert L == value.shape[0]
-        for t in range(L):
+        T = query.shape[0]
+        assert T == key.shape[0]
+        assert T == value.shape[0]
+        for t in range(T):
             o, tmp_state = self._forward_step(query[t], key[t], value[t], tmp_state)
 
         if self.batch_first and not isinstance(o, TensorPlaceholder):
@@ -1016,6 +885,8 @@ class CoReMultiheadAttention(CoModule, torch.nn.Module):
 
         if update_state:
             self.set_state(tmp_state)
+        elif backup_state is not None:
+            self.set_state(backup_state)
 
         return o
 
