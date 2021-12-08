@@ -3,7 +3,7 @@ import math
 import torch
 from continual.module import TensorPlaceholder
 
-from modules.co_mha import (
+from modules.co_re_mha import (
     CoReMultiheadAttention,
     _scaled_dot_product_attention_default_state,
     _scaled_dot_product_attention_step,
