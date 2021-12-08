@@ -1,6 +1,6 @@
 import math
 import warnings
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
