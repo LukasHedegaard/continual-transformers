@@ -5,7 +5,7 @@ from typing import Optional, Tuple
 import torch
 import torch.nn.functional as F
 from torch import Tensor
-
+from continual.module import CallMode
 from modules.co_mha_base import CoMultiheadAttentionBase
 
 State = Tuple[
@@ -231,3 +231,37 @@ class CoSiMultiheadAttention(CoMultiheadAttentionBase):
         return CoMultiheadAttentionBase.forward(
             self, query, key, value, key_padding_mask, need_weights, attn_mask
         )
+
+    def flops(self, include_muls=True, include_adds=False, include_exps=False):
+        return {
+            CallMode.FORWARD: forward_flops,
+            CallMode.FORWARD_STEP: forward_step_flops,
+        }[self.call_mode](
+            self.sequence_len, self.embed_dim, include_muls, include_adds, include_exps
+        )
+
+
+def forward_flops(
+    sequence_len, embed_dim, include_muls=True, include_adds=False, include_exps=False
+):
+    n = sequence_len
+    d = embed_dim
+
+    flops = 0
+
+    if include_muls:
+        flops += 2 * n * d + 2 * d
+    if include_adds:
+        flops += 2 * n * d - d - 1
+    if include_exps:
+        flops += n
+
+    return flops
+
+
+def forward_step_flops(
+    sequence_len, embed_dim, include_muls=True, include_adds=False, include_exps=False
+):
+    return forward_flops(
+        sequence_len, embed_dim, include_muls, include_adds, include_exps
+    )

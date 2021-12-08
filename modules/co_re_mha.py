@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 
 import torch
 from torch import Tensor
-
+from continual.module import CallMode
 from modules.co_mha_base import CoMultiheadAttentionBase
 
 State = Tuple[
@@ -252,3 +252,47 @@ class CoReMultiheadAttention(CoMultiheadAttentionBase):
             del self.V_mem
         if hasattr(self, "stride_index"):
             del self.stride_index
+
+    def flops(self, include_muls=True, include_adds=False, include_exps=False):
+        return {
+            CallMode.FORWARD: forward_flops,
+            CallMode.FORWARD_STEP: forward_step_flops,
+        }[self.call_mode](
+            self.sequence_len, self.embed_dim, include_muls, include_adds, include_exps
+        )
+
+
+def forward_flops(
+    sequence_len, embed_dim, include_muls=True, include_adds=False, include_exps=False
+):
+    n = sequence_len
+    d = embed_dim
+
+    flops = 0
+
+    if include_muls:
+        flops += 2 * n * n * d + 2 * n * d
+    if include_adds:
+        flops += 2 * n * n - n * d - n
+    if include_exps:
+        flops += n * n
+
+    return flops
+
+
+def forward_step_flops(
+    sequence_len, embed_dim, include_muls=True, include_adds=False, include_exps=False
+):
+    n = sequence_len
+    d = embed_dim
+
+    flops = 0
+
+    if include_muls:
+        flops += 7 * n * d + 2 * n - 3 * d
+    if include_adds:
+        flops += 6 * n * d + 3 * n - 6 * d - 3
+    if include_exps:
+        flops += 3 * n - 2
+
+    return flops
