@@ -192,7 +192,13 @@ def _scaled_dot_product_attention_mod(
     return output, attn
 
 
-State = Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, int, int, int]
+State = Tuple[
+    Tensor,  # d_mem, (B, Nt-1)
+    Tensor,  # AV_mem, (B, Ns-1, E)
+    Tensor,  # Q_mem, (B, Nt-1, E)
+    Tensor,  # K_T_mem, (B, E, Ns)
+    Tensor,  # V_mem, (B, Ns, E)
+]
 
 
 def _scaled_dot_product_attention_default_state(
