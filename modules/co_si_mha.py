@@ -72,7 +72,7 @@ def _scaled_dot_product_attention_step(
 
     B, E = q_step.shape
     q_step = q_step / math.sqrt(E)
-    q_sel = Q_mem[:, 0].unsqueeze(1)
+    q_sel = (Q_mem[:, 0] if Q_mem.shape[1] > 0 else q_step).unsqueeze(1)
 
     # Update states
     # Note: We're allowing the K and V mem to have one more entry than
@@ -93,8 +93,11 @@ def _scaled_dot_product_attention_step(
     # (B, Nt, Ns) x (B, Ns, E) -> (B, Nt, E)
     output = torch.bmm(attn_sm, V_new)
 
-    Q_new = torch.roll(Q_mem, shifts=-1, dims=(1,))
-    Q_new[:, -1] = q_step
+    if Q_mem.shape[1] > 0:
+        Q_new = torch.roll(Q_mem, shifts=-1, dims=(1,))
+        Q_new[:, -1] = q_step
+    else:
+        Q_new = Q_mem
 
     new_states = (Q_new, K_T_new, V_new)
 
