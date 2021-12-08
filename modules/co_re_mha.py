@@ -4,6 +4,7 @@ from typing import Optional, Tuple
 
 import torch
 from torch import Tensor
+
 from modules.co_mha_base import CoMultiheadAttentionBase
 
 State = Tuple[
@@ -16,23 +17,23 @@ State = Tuple[
 
 
 def _scaled_dot_product_attention_default_state(
-    B: int,  # batch_size
-    Nt: int,  # num_target
-    Ns: int,  # num_source
-    E: int,  # embedding_dim
-    H: int,  # num_heads
+    batch_size: int,
+    sequence_len: int,
+    embed_dim: int,
+    num_heads: int,
     init_fn=torch.zeros,
     dtype=None,
     device=None,
 ):
     init_fn = partial(init_fn, dtype=dtype, device=device)
-    E = E // H
-    B = B * H
-    d_mem = init_fn((B, Nt - 1, 1))
-    AV_mem = init_fn((B, Ns - 1, E))
-    Q_mem = init_fn((B, Nt - 1, E))
-    K_T_mem = init_fn((B, E, Ns))
-    V_mem = init_fn((B, Ns, E))
+    E = embed_dim // num_heads
+    B = batch_size * num_heads
+    N = sequence_len
+    d_mem = init_fn((B, N - 1, 1))
+    AV_mem = init_fn((B, N - 1, E))
+    Q_mem = init_fn((B, N - 1, E))
+    K_T_mem = init_fn((B, E, N))
+    V_mem = init_fn((B, N, E))
     return (d_mem, AV_mem, Q_mem, K_T_mem, V_mem)
 
 
@@ -190,7 +191,12 @@ class CoReMultiheadAttention(CoMultiheadAttentionBase):
             device,
             dtype,
             sequence_len,
-            _scaled_dot_product_attention_default_state,
+            partial(
+                _scaled_dot_product_attention_default_state,
+                sequence_len=sequence_len,
+                embed_dim=embed_dim,
+                num_heads=num_heads,
+            ),
             _scaled_dot_product_attention_step,
         )
 

@@ -1,16 +1,14 @@
-import math
-from functools import partial
-from typing import Any, Callable, Optional, Tuple, Union, List
 from abc import abstractmethod
+from typing import Any, Callable, List, Optional, Tuple, Union
+
 import torch
 import torch.nn.functional as F
 from continual.module import CoModule, TensorPlaceholder
 from torch import Tensor
 from torch.nn.modules.activation import MultiheadAttention
-from modules.in_projection import (
-    in_projection as _in_projection,
-    in_projection_packed as _in_projection_packed,
-)
+
+from modules.in_projection import in_projection as _in_projection
+from modules.in_projection import in_projection_packed as _in_projection_packed
 
 MaybeTensor = Union[Tensor, TensorPlaceholder]
 
@@ -367,15 +365,10 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
         Returns:
             Tuple[MaybeTensor, State]: Step output and new state.
         """
-        batch_size = query.shape[0]
         if prev_state is None:
             prev_state = (
                 *self._sdpa_default_state(
-                    batch_size,
-                    self.sequence_len,
-                    self.sequence_len,
-                    self.embed_dim,
-                    self.num_heads,
+                    batch_size=query.shape[0],
                     dtype=query.dtype,
                     device=query.device,
                 ),
@@ -488,18 +481,21 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
         T = query.shape[0]
         assert T == key.shape[0]
         assert T == value.shape[0]
+        outs = []
         for t in range(T):
             o, tmp_state = self._forward_step(query[t], key[t], value[t], tmp_state)
 
-        if self.batch_first and not isinstance(o, TensorPlaceholder):
-            o = o.transpose(1, 0)
+            if not isinstance(o, TensorPlaceholder):
+                if self.batch_first:
+                    o = o.transpose(1, 0)
+                outs.append(o)
 
         if update_state:
             self.set_state(tmp_state)
         elif backup_state is not None:
             self.set_state(backup_state)
 
-        return o
+        return torch.cat(outs, dim=0) if len(outs) > 0 else o
 
     @property
     def receptive_field(self) -> int:
