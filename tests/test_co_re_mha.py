@@ -3,12 +3,12 @@ import math
 import torch
 from continual.module import TensorPlaceholder
 
-from modules.co_mha import (
+from continual_transformers.co_re_mha import (
     CoReMultiheadAttention,
     _scaled_dot_product_attention_default_state,
     _scaled_dot_product_attention_step,
 )
-from modules.mha import MultiheadAttention, _scaled_dot_product_attention
+from continual_transformers.mha import MultiheadAttention, _scaled_dot_product_attention
 
 torch.manual_seed(42)
 
@@ -81,23 +81,22 @@ def test_multi_head_attention():
 
 
 def test_scaled_dot_product_attention_step():
-    Nt = 10  # target sequence length
-    Ns = Nt  # source sequence length
+    N = 10  # sequence length
     E = 5  # embedding dimension
     B = 2  # batch size
     H = 1  # num heads
 
-    query1 = torch.randn((B, Nt, E))
-    key1 = torch.randn((B, Ns, E))
-    value1 = torch.randn((B, Ns, E))
+    query1 = torch.randn((B, N, E))
+    key1 = torch.randn((B, N, E))
+    value1 = torch.randn((B, N, E))
 
     # Manually compute first output
     q = query1 / math.sqrt(E)
-    # (B, Nt, E) x (B, E, Ns) -> (B, Nt, Ns)
+    # (B, N, E) x (B, E, N) -> (B, N, N)
     attn_exp = torch.exp(torch.bmm(q, key1.transpose(-2, -1)))
     attn_sum = attn_exp.sum(dim=-1)  # over key dim
 
-    # (B, Nt, Ns) x (B, Ns, E) -> (B, Nt, E)
+    # (B, N, N) x (B, N, E) -> (B, N, E)
     av = torch.bmm(attn_exp, value1)
     output1 = av / attn_sum.unsqueeze(-1)
 
@@ -118,16 +117,18 @@ def test_scaled_dot_product_attention_step():
 
     # Manually compute first output
     q = query2 / math.sqrt(E)
-    # (B, Nt, E) x (B, E, Ns) -> (B, Nt, Ns)
+    # (B, N, E) x (B, E, N) -> (B, N, N)
     # attn_exp2 = torch.exp(torch.bmm(q, key2.transpose(-2, -1)))
     # av2 = torch.bmm(attn_exp2, value2)
 
     target2, _ = _scaled_dot_product_attention(query2, key2, value2)
 
     prev_state = (
-        attn_sum[:, 1:],
+        # attn_sum[:, 1:],
+        attn_sum[:, 1:].unsqueeze(-1),
         av[:, 1:],
-        query1 / math.sqrt(E),
+        # query1 / math.sqrt(E),
+        query1[:, 1:] / math.sqrt(E),
         key1.transpose(-2, -1),
         value1,
         # 0,
@@ -144,10 +145,8 @@ def test_scaled_dot_product_attention_step():
     assert torch.allclose(target2, output2, atol=1e-7)
 
     # Now, let's try from zero-init
-    state = _scaled_dot_product_attention_default_state(
-        B, Nt, Ns, E, H, dtype=torch.float
-    )
-    for i in range(Nt):
+    state = _scaled_dot_product_attention_default_state(B, N, E, H, dtype=torch.float)
+    for i in range(N):
         output_step, state = _scaled_dot_product_attention_step(
             state, query1[:, i], key1[:, i], value1[:, i]
         )
