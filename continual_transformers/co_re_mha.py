@@ -5,7 +5,7 @@ from typing import Optional, Tuple
 import torch
 from torch import Tensor
 from continual.module import CallMode
-from modules.co_mha_base import CoMultiheadAttentionBase
+from continual_transformers.co_mha_base import CoMultiheadAttentionBase
 
 State = Tuple[
     Tensor,  # d_mem, (B, Nt-1)

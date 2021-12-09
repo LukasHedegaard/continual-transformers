@@ -1,6 +1,6 @@
 from logging import getLogger
-from modules.co_re_mha import CoReMultiheadAttention
-from modules.co_si_mha import CoSiMultiheadAttention
+from continual_transformers.co_re_mha import CoReMultiheadAttention
+from continual_transformers.co_si_mha import CoSiMultiheadAttention
 
 logger = getLogger(__name__)
 

@@ -7,8 +7,10 @@ from continual.module import CoModule, TensorPlaceholder
 from torch import Tensor
 from torch.nn.modules.activation import MultiheadAttention
 
-from modules.in_projection import in_projection as _in_projection
-from modules.in_projection import in_projection_packed as _in_projection_packed
+from continual_transformers.in_projection import in_projection as _in_projection
+from continual_transformers.in_projection import (
+    in_projection_packed as _in_projection_packed,
+)
 
 MaybeTensor = Union[Tensor, TensorPlaceholder]
 

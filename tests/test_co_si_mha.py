@@ -1,8 +1,8 @@
 import torch
 from continual.module import TensorPlaceholder
 
-from modules.co_si_mha import CoSiMultiheadAttention
-from modules.mha import MultiheadAttention
+from continual_transformers.co_si_mha import CoSiMultiheadAttention
+from continual_transformers.mha import MultiheadAttention
 
 torch.manual_seed(42)
 

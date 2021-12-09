@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 from continual.module import CallMode
-from modules.co_mha_base import CoMultiheadAttentionBase
+from .co_mha_base import CoMultiheadAttentionBase
 
 State = Tuple[
     Tensor,  # Q_mem, (B, Nt-1, E)

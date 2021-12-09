@@ -3,12 +3,12 @@ import math
 import torch
 from continual.module import TensorPlaceholder
 
-from modules.co_re_mha import (
+from continual_transformers.co_re_mha import (
     CoReMultiheadAttention,
     _scaled_dot_product_attention_default_state,
     _scaled_dot_product_attention_step,
 )
-from modules.mha import MultiheadAttention, _scaled_dot_product_attention
+from continual_transformers.mha import MultiheadAttention, _scaled_dot_product_attention
 
 torch.manual_seed(42)
 

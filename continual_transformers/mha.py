@@ -10,8 +10,10 @@ from torch.nn.modules.linear import NonDynamicallyQuantizableLinear
 from torch.nn.parameter import Parameter
 from torch.overrides import handle_torch_function, has_torch_function
 
-from modules.in_projection import in_projection as _in_projection
-from modules.in_projection import in_projection_packed as _in_projection_packed
+from continual_transformers.in_projection import in_projection as _in_projection
+from continual_transformers.in_projection import (
+    in_projection_packed as _in_projection_packed,
+)
 
 #
 # multihead attention
