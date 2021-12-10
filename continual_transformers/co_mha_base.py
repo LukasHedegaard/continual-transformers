@@ -266,6 +266,7 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
         sequence_len=None,
         scaled_dot_product_attention_default_state_fn: Callable = None,
         scaled_dot_product_attention_step_fn: Callable = None,
+        forward_returns_attn_mask=True,
     ) -> None:
         MultiheadAttention.__init__(
             self,
@@ -284,6 +285,7 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
         self.sequence_len = sequence_len
         self._sdpa_default_state = scaled_dot_product_attention_default_state_fn
         self._sdpa_step = scaled_dot_product_attention_step_fn
+        self.forward_returns_attn_mask = forward_returns_attn_mask
 
     @abstractmethod
     def get_state(self) -> Optional[Any]:
@@ -300,8 +302,8 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
     def forward(
         self,
         query: Tensor,
-        key: Tensor,
-        value: Tensor,
+        key: Tensor = None,
+        value: Tensor = None,
         key_padding_mask: Optional[Tensor] = None,
         need_weights: bool = True,
         attn_mask: Optional[Tensor] = None,
@@ -346,9 +348,18 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
             - attn_output_weights: :math:`(N, L, S)` where N is the batch size,
               L is the target sequence length, S is the source sequence length.
         """
-        return MultiheadAttention.forward(
+        if key is None:
+            key = query
+        if value is None:
+            value = query
+
+        attn_output, attn_output_weights = MultiheadAttention.forward(
             self, query, key, value, key_padding_mask, need_weights, attn_mask
         )
+        if self.forward_returns_attn_mask:
+            return attn_output, attn_output_weights
+        else:
+            return attn_output
 
     def _forward_step(
         self,
@@ -409,8 +420,8 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
     def forward_step(
         self,
         query: Tensor,
-        key: Tensor,
-        value: Tensor,
+        key: Tensor = None,
+        value: Tensor = None,
         update_state=True,
         *args,
         **kwargs,
@@ -433,6 +444,14 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
               E is the embedding dimension. :math:`(N, L, E)` if ``batch_first`` is ``True``.
             - new_state: Tuple of internal states.
         """
+        if key is None:
+            key = query
+        if value is None:
+            value = query
+
+        if self.batch_first:
+            query, key, value = [x.transpose(1, 0) for x in (query, key, value)]
+
         tmp_state = self.get_state()
 
         if not update_state and tmp_state:
@@ -453,8 +472,8 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
     def forward_steps(
         self,
         query: Tensor,
-        key: Tensor,
-        value: Tensor,
+        key: Tensor = None,
+        value: Tensor = None,
         pad_end=False,
         update_state=True,
         *args,
@@ -472,6 +491,11 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
         Returns:
             Tensor: Layer output corresponding to the self-attention for the last step
         """
+        if key is None:
+            key = query
+        if value is None:
+            value = query
+
         if self.batch_first:
             query, key, value = [x.transpose(1, 0) for x in (query, key, value)]
 
