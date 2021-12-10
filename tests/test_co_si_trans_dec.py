@@ -1,6 +1,7 @@
-from continual_transformers.co_si_trans_dec import CoSiTransformerEncoder
-from ptflops import get_model_complexity_info
 import torch
+from ptflops import get_model_complexity_info
+
+from continual_transformers.co_si_trans_dec import CoSiTransformerEncoder
 
 
 def test_CoSiTransformerEncoder():
