@@ -11,7 +11,7 @@ def _register_ptflops():
 
         def get_hook(Module):
             def hook(module, input, output):
-                return Module.flops()
+                return Module.flops(module)
 
             return hook
 
