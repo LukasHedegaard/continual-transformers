@@ -217,12 +217,16 @@ class CoSiMultiheadAttention(CoMultiheadAttentionBase):
     def forward(
         self,
         query: Tensor,
-        key: Tensor,
-        value: Tensor,
+        key: Tensor = None,
+        value: Tensor = None,
         key_padding_mask: Optional[Tensor] = None,
         need_weights: bool = True,
         attn_mask: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Optional[Tensor]]:
+        if key is None:
+            key = query
+        if value is None:
+            value = query
 
         # Select a single query entry
         if self.batch_first:

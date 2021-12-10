@@ -29,7 +29,7 @@ def long_description():
 
 setup(
     name="continual-transformers",
-    version="0.2.1",
+    version="0.2.2",
     description="Continual Transformers in PyTorch",
     author="Lukas Hedegaard",
     author_email="lukasxhedegaard@gmail.com",
