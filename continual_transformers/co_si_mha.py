@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from continual.module import CallMode
 from torch import Tensor
 
-from .co_mha_base import CoMultiheadAttentionBase
+from .co_mha_base import CoMultiheadAttentionBase, MaybeTensor
 
 State = Tuple[
     Tensor,  # Q_mem, (B, Nt-1, E)
@@ -170,7 +170,7 @@ class CoSiMultiheadAttention(CoMultiheadAttentionBase):
             forward_returns_attn_mask,
         )
         assert query_index < sequence_len
-        self._query_index = query_index
+        self.query_index = query_index
 
     def get_state(self) -> Optional[State]:
         """Get model state
@@ -215,6 +215,14 @@ class CoSiMultiheadAttention(CoMultiheadAttentionBase):
         if hasattr(self, "stride_index"):
             del self.stride_index
 
+    @property
+    def delay(self) -> int:
+        return (
+            self.sequence_len - self.query_index - 1
+            if self.query_index >= 0
+            else -self.query_index - 1
+        )
+
     def forward(
         self,
         query: Tensor,
@@ -231,13 +239,68 @@ class CoSiMultiheadAttention(CoMultiheadAttentionBase):
 
         # Select a single query entry
         if self.batch_first:
-            query = query[:, self._query_index].unsqueeze(1)
+            query = query[:, self.query_index].unsqueeze(1)
         else:
-            query = query[self._query_index].unsqueeze(0)
+            query = query[self.query_index].unsqueeze(0)
 
         return CoMultiheadAttentionBase.forward(
             self, query, key, value, key_padding_mask, need_weights, attn_mask
         )
+
+    def forward_step(
+        self,
+        query: Tensor,
+        key: Tensor = None,
+        value: Tensor = None,
+        update_state=True,
+        *args,
+        **kwargs,
+    ) -> MaybeTensor:
+        """
+        Args:
+            query, key, value: step_inputs for mapping a query and a set of key-value pairs to an output.
+                See "Attention Is All You Need" for more details.
+
+        Shapes for inputs:
+            - query: :math:`(N, E)` where L is the target sequence length, N is the batch size, E is
+              the embedding dimension.
+            - key: :math:`(N, E)`, where S is the source sequence length, N is the batch size, E is
+              the embedding dimension.
+            - value: :math:`(N, E)` where S is the source sequence length, N is the batch size, E is
+              the embedding dimension.
+
+        Shapes for outputs:
+            - attn_output: :math:`(N, E)` where N is the batch size and E is the embedding dimension.
+        """
+        o = CoMultiheadAttentionBase.forward_step(
+            self, query, key, value, update_state, *args, **kwargs
+        )
+        return o.squeeze(1 if self.batch_first else 0) if isinstance(o, Tensor) else o
+
+    def forward_steps(
+        self,
+        query: Tensor,
+        key: Tensor = None,
+        value: Tensor = None,
+        update_state=True,
+        *args,
+        **kwargs,
+    ) -> MaybeTensor:
+        """Forward computation for multiple steps with state initialisation
+
+        Args:
+            query (Tensor): query.
+            key (Tensor): key.
+            value (Tensor): value.
+            update_state (bool): Whether internal state should be updated during this operation.
+
+        Returns:
+            Tensor: Stepwise layer outputs
+        """
+        o = CoMultiheadAttentionBase.forward_steps(
+            self, query, key, value, update_state, *args, **kwargs
+        )
+        return o.squeeze(1 if self.batch_first else 0) if isinstance(o, Tensor) else o
 
     def flops(self, include_muls=True, include_adds=False, include_exps=False):
         f = 0
