@@ -449,9 +449,6 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
         if value is None:
             value = query
 
-        if self.batch_first:
-            query, key, value = [x.transpose(1, 0) for x in (query, key, value)]
-
         tmp_state = self.get_state()
 
         if not update_state and tmp_state:

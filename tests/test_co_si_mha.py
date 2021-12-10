@@ -1,8 +1,9 @@
 import torch
 from continual.module import TensorPlaceholder
+from ptflops import get_model_complexity_info
+from torch.nn.modules.activation import MultiheadAttention
 
 from continual_transformers.co_si_mha import CoSiMultiheadAttention
-from continual_transformers.mha import MultiheadAttention
 
 torch.manual_seed(42)
 
@@ -145,3 +146,75 @@ def test_multi_head_attention_nondefault_query_index():
     # Continual MHA should yield the same result by using query_step, key_step, and value_step
     attn_output_next2 = comha.forward_step(query_step, key_step, value_step)
     assert torch.allclose(attn_output_next[query_index], attn_output_next2)
+
+
+def test_flops():
+    L = 10  # target sequence length
+    E = 4  # embedding dimension
+    H = 2  # num heads
+
+    # Regular net
+    class Net(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.mha = MultiheadAttention(
+                embed_dim=E,
+                num_heads=H,
+                dropout=0.0,
+                bias=True,
+                add_bias_kv=False,
+                add_zero_attn=False,
+                kdim=None,
+                vdim=None,
+                batch_first=True,
+                device=None,
+                dtype=None,
+            )
+
+        def forward(self, x):
+            y, _ = self.mha(x, x, x)
+            return y
+
+    net = Net()
+
+    flops, params = get_model_complexity_info(
+        net,
+        (L, E),
+        as_strings=False,  # input_constructor=input_constructor,
+    )
+
+    # Continual net
+    co_net = CoSiMultiheadAttention(
+        embed_dim=E,
+        num_heads=H,
+        dropout=0.0,
+        bias=True,
+        add_bias_kv=False,
+        add_zero_attn=False,
+        kdim=None,
+        vdim=None,
+        batch_first=True,
+        device=None,
+        dtype=None,
+        sequence_len=L,
+        forward_returns_attn_mask=False,
+    )
+
+    co_flops, co_params = get_model_complexity_info(
+        co_net,
+        (L, E),
+        as_strings=False,  # input_constructor=input_constructor,
+    )
+
+    assert 0.5 * flops > co_flops  # Withing 10%
+    assert co_params == params
+
+    co_net.call_mode = "forward_step"
+    co_step_flops, co_step_params = get_model_complexity_info(
+        co_net,
+        (E,),
+        as_strings=False,  # input_constructor=input_constructor,
+    )
+
+    assert 0.1 * flops > co_step_flops and co_step_flops > 0
+    assert co_step_params == params

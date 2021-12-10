@@ -3,8 +3,9 @@ from functools import partial
 from typing import Optional, Tuple
 
 import torch
-from torch import Tensor
 from continual.module import CallMode
+from torch import Tensor
+
 from continual_transformers.co_mha_base import CoMultiheadAttentionBase
 
 State = Tuple[
@@ -256,15 +257,49 @@ class CoReMultiheadAttention(CoMultiheadAttentionBase):
             del self.stride_index
 
     def flops(self, include_muls=True, include_adds=False, include_exps=False):
-        return {
-            CallMode.FORWARD: forward_flops,
-            CallMode.FORWARD_STEP: forward_step_flops,
-        }[self.call_mode](
-            self.sequence_len, self.embed_dim, include_muls, include_adds, include_exps
+        f = 0
+
+        # Linear projection
+        steps_taken = {
+            CallMode.FORWARD: self.sequence_len,
+            CallMode.FORWARD_STEP: 1,
+        }[self.call_mode]
+
+        f += (
+            steps_taken
+            * self.embed_dim
+            * self.embed_dim
+            * 3  # Assuming equal len for Q, K, and V
         )
 
+        if include_adds:
+            f += 3 * steps_taken * self.embed_dim * (self.embed_dim - 1)
 
-def forward_flops(
+        if self.in_proj_bias is not None:
+            f += 3 * steps_taken * self.embed_dim
+
+            if include_adds:
+                f += 3 * steps_taken * self.embed_dim
+
+        # Multi-head Scaled Dot-Product Attention
+        f += self.num_heads * {
+            CallMode.FORWARD: scaled_dot_prod_attn_flops,
+            CallMode.FORWARD_STEP: scaled_dot_prod_attn_step_flops,
+        }[self.call_mode](
+            self.sequence_len,
+            self.embed_dim // self.num_heads,
+            include_muls,
+            include_adds,
+            include_exps,
+        )
+
+        # Linear projection
+        f += self.sequence_len * self.embed_dim * (self.embed_dim + 1)
+
+        return f
+
+
+def scaled_dot_prod_attn_flops(
     sequence_len, embed_dim, include_muls=True, include_adds=False, include_exps=False
 ):
     n = sequence_len
@@ -282,7 +317,7 @@ def forward_flops(
     return flops
 
 
-def forward_step_flops(
+def scaled_dot_prod_attn_step_flops(
     sequence_len, embed_dim, include_muls=True, include_adds=False, include_exps=False
 ):
     n = sequence_len

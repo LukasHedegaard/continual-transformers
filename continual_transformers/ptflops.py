@@ -1,4 +1,5 @@
 from logging import getLogger
+
 from continual_transformers.co_re_mha import CoReMultiheadAttention
 from continual_transformers.co_si_mha import CoSiMultiheadAttention
 
@@ -11,7 +12,7 @@ def _register_ptflops():
 
         def get_hook(Module):
             def hook(module, input, output):
-                return Module.flops(module)
+                module.__flops__ += Module.flops(module)
 
             return hook
 
