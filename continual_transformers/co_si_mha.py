@@ -142,6 +142,7 @@ class CoSiMultiheadAttention(CoMultiheadAttentionBase):
         dtype=None,
         sequence_len=None,
         query_index=-1,
+        forward_returns_attn_mask=True,
     ) -> None:
         CoMultiheadAttentionBase.__init__(
             self,
@@ -165,6 +166,7 @@ class CoSiMultiheadAttention(CoMultiheadAttentionBase):
                 query_index=query_index,
             ),
             _scaled_dot_product_attention_step,
+            forward_returns_attn_mask,
         )
         assert query_index < sequence_len
         self._query_index = query_index

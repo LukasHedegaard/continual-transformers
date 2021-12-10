@@ -176,6 +176,7 @@ class CoReMultiheadAttention(CoMultiheadAttentionBase):
         device=None,
         dtype=None,
         sequence_len=None,
+        forward_returns_attn_mask=True,
     ) -> None:
         CoMultiheadAttentionBase.__init__(
             self,
@@ -198,6 +199,7 @@ class CoReMultiheadAttention(CoMultiheadAttentionBase):
                 num_heads=num_heads,
             ),
             _scaled_dot_product_attention_step,
+            forward_returns_attn_mask,
         )
 
     def get_state(self) -> Optional[State]:
