@@ -442,7 +442,6 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
         Shapes for outputs:
             - attn_output: :math:`(L, N, E)` where L is the target sequence length, N is the batch size,
               E is the embedding dimension. :math:`(N, L, E)` if ``batch_first`` is ``True``.
-            - new_state: Tuple of internal states.
         """
         if key is None:
             key = query
@@ -471,7 +470,6 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
         query: Tensor,
         key: Tensor = None,
         value: Tensor = None,
-        pad_end=False,
         update_state=True,
         *args,
         **kwargs,
@@ -482,11 +480,10 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
             query (Tensor): query.
             key (Tensor): key.
             value (Tensor): value.
-            pad_end (bool): Dummy parameter added to fulfill interface.
             update_state (bool): Whether internal state should be updated during this operation.
 
         Returns:
-            Tensor: Layer output corresponding to the self-attention for the last step
+            Tensor: Stepwise layer outputs
         """
         if key is None:
             key = query
@@ -518,7 +515,7 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
         elif backup_state is not None:
             self.set_state(backup_state)
 
-        return torch.cat(outs, dim=0) if len(outs) > 0 else o
+        return torch.cat(outs, dim=1 if self.batch_first else 0) if len(outs) > 0 else o
 
     @property
     def receptive_field(self) -> int:

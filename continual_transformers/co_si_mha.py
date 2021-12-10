@@ -144,6 +144,7 @@ class CoSiMultiheadAttention(CoMultiheadAttentionBase):
         sequence_len=None,
         query_index=-1,
         forward_returns_attn_mask=True,
+        embed_dim_second=False,
     ) -> None:
         CoMultiheadAttentionBase.__init__(
             self,
@@ -171,6 +172,7 @@ class CoSiMultiheadAttention(CoMultiheadAttentionBase):
         )
         assert query_index < sequence_len
         self.query_index = query_index
+        self.embed_dim_second = embed_dim_second
 
     def get_state(self) -> Optional[State]:
         """Get model state
@@ -237,15 +239,26 @@ class CoSiMultiheadAttention(CoMultiheadAttentionBase):
         if value is None:
             value = query
 
+        if self.embed_dim_second:
+            # N E T -> N T E
+            query = query.permute(0, 2, 1)
+            key = key.permute(0, 2, 1)
+            value = value.permute(0, 2, 1)
+
         # Select a single query entry
         if self.batch_first:
             query = query[:, self.query_index].unsqueeze(1)
         else:
             query = query[self.query_index].unsqueeze(0)
 
-        return CoMultiheadAttentionBase.forward(
+        o = CoMultiheadAttentionBase.forward(
             self, query, key, value, key_padding_mask, need_weights, attn_mask
         )
+
+        if self.embed_dim_second and isinstance(o, Tensor):
+            o = o.permute(0, 2, 1)  # N T E -> N E T
+
+        return o
 
     def forward_step(
         self,
@@ -297,10 +310,26 @@ class CoSiMultiheadAttention(CoMultiheadAttentionBase):
         Returns:
             Tensor: Stepwise layer outputs
         """
+        if key is None:
+            key = query
+        if value is None:
+            value = query
+
+        if self.embed_dim_second:
+            # N E T -> N T E
+            query = query.permute(0, 2, 1)
+            key = key.permute(0, 2, 1)
+            value = value.permute(0, 2, 1)
+
         o = CoMultiheadAttentionBase.forward_steps(
             self, query, key, value, update_state, *args, **kwargs
         )
-        return o.squeeze(1 if self.batch_first else 0) if isinstance(o, Tensor) else o
+        o = o.squeeze(1 if self.batch_first else 0) if isinstance(o, Tensor) else o
+
+        if self.embed_dim_second and isinstance(o, Tensor):
+            o = o.permute(0, 2, 1)  # N T E -> N E T
+
+        return o
 
     def flops(self, include_muls=True, include_adds=False, include_exps=False):
         f = 0
