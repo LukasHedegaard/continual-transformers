@@ -77,8 +77,11 @@ class RetroactiveUnity(co.Delay):
 
 class RetroactiveLambda(co.Lambda):
     """
-    Wrapper for functions that are applied after retroactive modules.
+    Lambda wrapper for functions that are applied after retroactive modules.
     """
+
+    def forward(self, input: Tensor) -> Tensor:
+        return co.Lambda.forward(self, input)
 
     def forward_step(self, input: Tensor, *args, **kwargs) -> Tensor:
         return self.forward(input)

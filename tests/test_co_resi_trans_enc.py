@@ -1,21 +1,7 @@
 import torch
 from ptflops import get_model_complexity_info
-from torch.functional import Tensor
 
-from continual_transformers.co_re_trans_enc import (
-    CoReTransformerEncoder,
-    RetroactiveUnity,
-)
-
-
-def test_RetroactiveUnity():
-    ru = RetroactiveUnity(delay=2)
-    assert not isinstance(ru.forward_step(torch.tensor([1])), Tensor)
-    assert not isinstance(ru.forward_step(torch.tensor([2])), Tensor)
-    o = ru.forward_step(torch.tensor([3]))
-    assert torch.equal(o, torch.tensor([1, 2, 3]).unsqueeze(0))
-    o = ru.forward_step(torch.tensor([4]))
-    assert torch.equal(o, torch.tensor([2, 3, 4]).unsqueeze(0))
+from continual_transformers.co_resi_trans_enc import CoReSiTransformerEncoder
 
 
 def test_CoReTransformerEncoder():
@@ -24,7 +10,7 @@ def test_CoReTransformerEncoder():
     N = 1  # batch size
     H = 2  # num heads
 
-    enc = CoReTransformerEncoder(
+    enc = CoReSiTransformerEncoder(
         sequence_len=T,
         embed_dim=E,
         num_heads=H,
@@ -62,4 +48,4 @@ def test_CoReTransformerEncoder():
         as_strings=False,  # input_constructor=input_constructor,
     )
 
-    assert step_flops < flops  # flops / step_flops = 2.15
+    assert step_flops < flops  # flops / step_flops = 1.66

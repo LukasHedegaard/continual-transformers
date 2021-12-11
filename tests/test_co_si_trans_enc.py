@@ -49,4 +49,4 @@ def test_CoSiTransformerEncoder():
         as_strings=False,  # input_constructor=input_constructor,
     )
 
-    assert step_flops < flops
+    assert step_flops < flops  # flops / step_flops = 3.45
