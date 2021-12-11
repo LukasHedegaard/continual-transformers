@@ -1,4 +1,8 @@
+from functools import reduce
+from typing import Sequence
+
 import continual as co
+import torch
 from torch import nn
 from torch.functional import Tensor
 
@@ -65,11 +69,17 @@ def CoSiTransformerEncoder(
         nn.Dropout(p=dropout),
     )
 
+    def sum_last_pairs(inputs: Sequence[Tensor]) -> Tensor:
+        if inputs[0].shape != inputs[1].shape:
+            T_min = min(inputs[i].shape[2] for i in range(len(inputs)))
+            inputs = [inp[:, :, -T_min:] for inp in inputs]
+        return reduce(torch.Tensor.add, inputs[1:], inputs[0])
+
     return co.Sequential(
         co.BroadcastReduce(
             SelectOrDelay(mha.delay),
             mha,
-            reduce="sum",
+            reduce=sum_last_pairs,
             auto_delay=False,
         ),
         co.Lambda(nn.LayerNorm(embed_dim), takes_time=False),

@@ -1,10 +1,13 @@
+from typing import Callable, Tuple
+
 import continual as co
+import torch
+from continual.delay import PaddingMode
+from continual.delay import State as DelayState
 from torch import nn
 from torch.functional import Tensor
-import torch
-from typing import Tuple, Callable
+
 from .co_re_mha import CoReMultiheadAttention
-from continual.delay import State as DelayState, PaddingMode
 
 
 class RetroactiveUnity(co.Delay):

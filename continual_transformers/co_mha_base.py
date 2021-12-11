@@ -539,9 +539,6 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
 
         o = torch.stack(outs, dim=int(self.batch_first))
 
-        if self.embed_dim_second:
-            o = o.transpose(1, 2)  # N T E -> N E T
-
         return o
 
     @property

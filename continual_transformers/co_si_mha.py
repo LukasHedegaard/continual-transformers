@@ -284,6 +284,37 @@ class CoSiMultiheadAttention(CoMultiheadAttentionBase):
         )
         return o.squeeze(1 if self.batch_first else 0) if isinstance(o, Tensor) else o
 
+    def forward_steps(
+        self,
+        query: Tensor,
+        key: Tensor = None,
+        value: Tensor = None,
+        update_state=True,
+        *args,
+        **kwargs,
+    ) -> MaybeTensor:
+        """Forward computation for multiple steps with state initialisation
+
+        Args:
+            query (Tensor): query.
+            key (Tensor): key.
+            value (Tensor): value.
+            update_state (bool): Whether internal state should be updated during this operation.
+
+        Returns:
+            Tensor: Stepwise layer outputs
+        """
+        o = CoMultiheadAttentionBase.forward_steps(
+            self, query, key, value, update_state, *args, **kwargs
+        )
+
+        if isinstance(o, Tensor):
+            o = o.squeeze(2)
+            if self.embed_dim_second:
+                o = o.transpose(1, 2)  # N T E -> N E T
+
+        return o
+
     def flops(self, include_muls=True, include_adds=False, include_exps=False):
         f = 0
 

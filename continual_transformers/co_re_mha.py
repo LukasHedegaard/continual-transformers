@@ -319,7 +319,7 @@ class CoReMultiheadAttention(CoMultiheadAttentionBase):
         )
 
         if isinstance(o, Tensor) and self.embed_dim_second:
-            o = o.transpose(1, 3)  # N T' T E -> N E T T'
+            o = o.permute(0, 3, 1, 2)  # N T T' E -> N E T T'
 
         return o
 

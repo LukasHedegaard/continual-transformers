@@ -19,14 +19,23 @@ def test_CoSiTransformerEncoder():
 
     query = torch.randn((N, E, T))
 
+    # Baseline
     o = enc.forward(query)
 
-    enc.forward_steps(query[:, :, :-1])
+    # Forward step
+    o_step = enc.forward_steps(query[:, :, :-1])  # init
 
     o_step = enc.forward_step(query[:, :, -1])
 
     assert torch.allclose(o, o_step.unsqueeze(-1))
 
+    # Forward steps
+    enc.clean_state()
+    o_steps = enc.forward_steps(query)
+
+    assert torch.allclose(o, o_steps)
+
+    # FLOPs
     flops, _ = get_model_complexity_info(
         enc,
         (E, T),
