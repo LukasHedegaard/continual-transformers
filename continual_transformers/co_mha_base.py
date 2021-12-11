@@ -509,6 +509,7 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
             value = value.permute(0, 2, 1)
 
         if self.batch_first:
+            # N T E -> T N E
             query, key, value = [x.transpose(1, 0) for x in (query, key, value)]
 
         tmp_state = self.get_state()
@@ -524,6 +525,8 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
             o, tmp_state = self._forward_step(query[t], key[t], value[t], tmp_state)
 
             if isinstance(o, Tensor):
+                if self.batch_first:
+                    o = o.transpose(0, 1)
                 outs.append(o)
 
         if update_state:
@@ -537,7 +540,7 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
         o = torch.stack(outs, dim=int(self.batch_first))
 
         if self.embed_dim_second:
-            o = o.permute(0, 2, 1)  # N T E -> N E T
+            o = o.transpose(1, 2)  # N T E -> N E T
 
         return o
 
