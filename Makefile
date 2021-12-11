@@ -37,7 +37,7 @@ clean:
 ## Test the setup
 test:
 	@echo ⚡⚡⚡ Testing ⚡⚡⚡
-	python -m pytest --cov-report term-missing 
+	python -m pytest --cov continual_transformers --cov-report term-missing 
 
 
 ## Lint the code
