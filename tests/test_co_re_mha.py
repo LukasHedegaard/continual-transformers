@@ -10,7 +10,8 @@ from continual_transformers.co_re_mha import (
     _scaled_dot_product_attention_default_state,
     _scaled_dot_product_attention_step,
 )
-from continual_transformers.mha import _scaled_dot_product_attention
+
+from .mha import _scaled_dot_product_attention
 
 torch.manual_seed(42)
 

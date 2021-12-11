@@ -7,11 +7,6 @@ from continual.module import CoModule, TensorPlaceholder
 from torch import Tensor
 from torch.nn.modules.activation import MultiheadAttention
 
-from continual_transformers.in_projection import in_projection as _in_projection
-from continual_transformers.in_projection import (
-    in_projection_packed as _in_projection_packed,
-)
-
 MaybeTensor = Union[Tensor, TensorPlaceholder]
 
 State = List[Tensor]
@@ -138,7 +133,9 @@ def multi_head_attention_forward_step(  # noqa: C901
     # compute in-projection
     if not use_separate_proj_weight:
         # Note: Also works for single step (unqueeze dim 0)
-        q, k, v = _in_projection_packed(query, key, value, in_proj_weight, in_proj_bias)
+        q, k, v = F._in_projection_packed(
+            query, key, value, in_proj_weight, in_proj_bias
+        )
     else:
         assert (
             q_proj_weight is not None
@@ -153,7 +150,7 @@ def multi_head_attention_forward_step(  # noqa: C901
             b_q = b_k = b_v = None
         else:
             b_q, b_k, b_v = in_proj_bias.chunk(3)
-        q, k, v = _in_projection(
+        q, k, v = F._in_projection(
             query,
             key,
             value,
