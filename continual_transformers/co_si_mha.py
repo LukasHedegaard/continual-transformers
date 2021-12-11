@@ -169,10 +169,10 @@ class CoSiMultiheadAttention(CoMultiheadAttentionBase):
             ),
             _scaled_dot_product_attention_step,
             forward_returns_attn_mask,
+            embed_dim_second,
         )
         assert query_index < sequence_len
         self.query_index = query_index
-        self.embed_dim_second = embed_dim_second
 
     def get_state(self) -> Optional[State]:
         """Get model state
@@ -239,24 +239,18 @@ class CoSiMultiheadAttention(CoMultiheadAttentionBase):
         if value is None:
             value = query
 
-        if self.embed_dim_second:
-            # N E T -> N T E
-            query = query.permute(0, 2, 1)
-            key = key.permute(0, 2, 1)
-            value = value.permute(0, 2, 1)
-
         # Select a single query entry
         if self.batch_first:
-            query = query[:, self.query_index].unsqueeze(1)
+            if self.embed_dim_second:
+                query = query[:, :, self.query_index].unsqueeze(2)
+            else:
+                query = query[:, self.query_index].unsqueeze(1)
         else:
             query = query[self.query_index].unsqueeze(0)
 
         o = CoMultiheadAttentionBase.forward(
             self, query, key, value, key_padding_mask, need_weights, attn_mask
         )
-
-        if self.embed_dim_second and isinstance(o, Tensor):
-            o = o.permute(0, 2, 1)  # N T E -> N E T
 
         return o
 
@@ -289,47 +283,6 @@ class CoSiMultiheadAttention(CoMultiheadAttentionBase):
             self, query, key, value, update_state, *args, **kwargs
         )
         return o.squeeze(1 if self.batch_first else 0) if isinstance(o, Tensor) else o
-
-    def forward_steps(
-        self,
-        query: Tensor,
-        key: Tensor = None,
-        value: Tensor = None,
-        update_state=True,
-        *args,
-        **kwargs,
-    ) -> MaybeTensor:
-        """Forward computation for multiple steps with state initialisation
-
-        Args:
-            query (Tensor): query.
-            key (Tensor): key.
-            value (Tensor): value.
-            update_state (bool): Whether internal state should be updated during this operation.
-
-        Returns:
-            Tensor: Stepwise layer outputs
-        """
-        if key is None:
-            key = query
-        if value is None:
-            value = query
-
-        if self.embed_dim_second:
-            # N E T -> N T E
-            query = query.permute(0, 2, 1)
-            key = key.permute(0, 2, 1)
-            value = value.permute(0, 2, 1)
-
-        o = CoMultiheadAttentionBase.forward_steps(
-            self, query, key, value, update_state, *args, **kwargs
-        )
-        o = o.squeeze(1 if self.batch_first else 0) if isinstance(o, Tensor) else o
-
-        if self.embed_dim_second and isinstance(o, Tensor):
-            o = o.permute(0, 2, 1)  # N T E -> N E T
-
-        return o
 
     def flops(self, include_muls=True, include_adds=False, include_exps=False):
         f = 0

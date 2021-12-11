@@ -267,6 +267,7 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
         scaled_dot_product_attention_default_state_fn: Callable = None,
         scaled_dot_product_attention_step_fn: Callable = None,
         forward_returns_attn_mask=True,
+        embed_dim_second=False,
     ) -> None:
         MultiheadAttention.__init__(
             self,
@@ -286,6 +287,7 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
         self._sdpa_default_state = scaled_dot_product_attention_default_state_fn
         self._sdpa_step = scaled_dot_product_attention_step_fn
         self.forward_returns_attn_mask = forward_returns_attn_mask
+        self.embed_dim_second = embed_dim_second
 
     @abstractmethod
     def get_state(self) -> Optional[Any]:
@@ -353,13 +355,23 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
         if value is None:
             value = query
 
-        attn_output, attn_output_weights = MultiheadAttention.forward(
+        if self.embed_dim_second:
+            # N E T -> N T E
+            query = query.permute(0, 2, 1)
+            key = key.permute(0, 2, 1)
+            value = value.permute(0, 2, 1)
+
+        o, attn_output_weights = MultiheadAttention.forward(
             self, query, key, value, key_padding_mask, need_weights, attn_mask
         )
+
+        if self.embed_dim_second:
+            o = o.permute(0, 2, 1)  # N T E -> N E T
+
         if self.forward_returns_attn_mask:
-            return attn_output, attn_output_weights
+            return o, attn_output_weights
         else:
-            return attn_output
+            return o
 
     def _forward_step(
         self,
@@ -490,6 +502,12 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
         if value is None:
             value = query
 
+        if self.embed_dim_second:
+            # N E T -> N T E
+            query = query.permute(0, 2, 1)
+            key = key.permute(0, 2, 1)
+            value = value.permute(0, 2, 1)
+
         if self.batch_first:
             query, key, value = [x.transpose(1, 0) for x in (query, key, value)]
 
@@ -505,9 +523,7 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
         for t in range(T):
             o, tmp_state = self._forward_step(query[t], key[t], value[t], tmp_state)
 
-            if not isinstance(o, TensorPlaceholder):
-                if self.batch_first:
-                    o = o.transpose(1, 0)
+            if isinstance(o, Tensor):
                 outs.append(o)
 
         if update_state:
@@ -515,7 +531,15 @@ class CoMultiheadAttentionBase(CoModule, MultiheadAttention):
         elif backup_state is not None:
             self.set_state(backup_state)
 
-        return torch.cat(outs, dim=1 if self.batch_first else 0) if len(outs) > 0 else o
+        if len(outs) == 0:
+            return o
+
+        o = torch.stack(outs, dim=int(self.batch_first))
+
+        if self.embed_dim_second:
+            o = o.permute(0, 2, 1)  # N T E -> N E T
+
+        return o
 
     @property
     def receptive_field(self) -> int:
