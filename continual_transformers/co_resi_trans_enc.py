@@ -59,7 +59,14 @@ def CoReSiTransformerEncoder(
         dtype,
     )
 
+    def unity(x):
+        return x
+
+    def squeeze_last(x):
+        return x.squeeze(-1)
+
     return co.Sequential(
         core,
         RetroactiveLambda(cosi, takes_time=True),
+        co.Lambda(unity, None, squeeze_last, squeeze_last, takes_time=True),
     )

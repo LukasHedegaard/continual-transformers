@@ -1,5 +1,6 @@
 import math
 from functools import partial
+from logging import getLogger
 from typing import Optional, Tuple
 
 import torch
@@ -7,6 +8,8 @@ from continual.module import CallMode
 from torch import Tensor
 
 from continual_transformers.co_mha_base import CoMultiheadAttentionBase, MaybeTensor
+
+logger = getLogger(__name__)
 
 State = Tuple[
     Tensor,  # d_mem, (B, Nt-1)
@@ -63,8 +66,10 @@ def _scaled_dot_product_attention_step(
 
         - Output: attention values have shape :math:`(B, Nt, E)`; new state
     """
-    assert attn_mask is None, "attn_mask is not supported yet."
-    assert dropout_p == 0.0, "dropout_p is not supported yet."
+    if attn_mask is not None:
+        logger.warning("attn_mask is not supported yet and will be skipped")
+    if dropout_p != 0.0:
+        logger.warning("dropout_p is not supported yet and will be skipped")
 
     (
         d_mem,  # (B, Nt-1)
