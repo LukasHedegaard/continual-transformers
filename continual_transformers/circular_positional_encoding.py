@@ -4,7 +4,7 @@ from torch import Tensor, nn
 
 
 class CircularPositionalEncoding(co.CoModule, nn.Module):
-    def __init__(self, embed_dim: int, num_embeds: int, forward_update_index_steps=0):
+    def __init__(self, embed_dim: int, num_embeds: int, forward_update_index_steps=1):
         nn.Module.__init__(self)
         self.pe = nn.Embedding(num_embeds, embed_dim)
         self.index = 0
@@ -17,7 +17,11 @@ class CircularPositionalEncoding(co.CoModule, nn.Module):
             torch.arange(T).unsqueeze(0) + self.index
         ) % self.pe.num_embeddings
 
-        index_update = update_index_steps or self.forward_update_index_steps
+        index_update = (
+            self.forward_update_index_steps
+            if update_index_steps is None
+            else update_index_steps
+        )
         self.index = (self.index + index_update) % self.pe.num_embeddings
 
         position_embeddings = self.pe(position_ids).transpose(1, 2)
@@ -34,3 +38,7 @@ class CircularPositionalEncoding(co.CoModule, nn.Module):
         if update_state:
             self.index = (self.index + 1) % self.pe.num_embeddings
         return output
+
+    def clean_state(self):
+        """Clean model state"""
+        self.index = 0

@@ -10,7 +10,9 @@ def test_CircularPositionalEncoding():
 
     x = torch.zeros((B, C, T))
 
-    cpe = CircularPositionalEncoding(embed_dim=C, num_embeds=T)
+    cpe = CircularPositionalEncoding(
+        embed_dim=C, num_embeds=T, forward_update_index_steps=0
+    )
 
     o_forward = cpe.forward(x)
 
