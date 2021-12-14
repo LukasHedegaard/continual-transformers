@@ -14,7 +14,7 @@ class CircularPositionalEncoding(co.CoModule, nn.Module):
         T = input.shape[2]
         assert T <= self.pe.num_embeddings
         position_ids = (
-            torch.arange(T).unsqueeze(0) + self.index
+            torch.arange(T, device=self.pe.weight.device).unsqueeze(0) + self.index
         ) % self.pe.num_embeddings
 
         index_update = (
