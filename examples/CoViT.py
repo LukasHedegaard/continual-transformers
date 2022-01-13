@@ -1,11 +1,12 @@
-from continual_transformers import (
-    CoSiTransformerEncoder,
-    CoReSiTransformerEncoder,
-    CircularPositionalEncoding,
-)
+import continual as co
 import torch
 from torch import nn
-import continual as co
+
+from continual_transformers import (
+    CircularPositionalEncoding,
+    CoReSiTransformerEncoder,
+    CoSiTransformerEncoder,
+)
 
 
 def CoTransformerModel(
