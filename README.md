@@ -1,72 +1,64 @@
-# Continual Transformers (CoT)
+# Continual Transformers: Redundancy-Free Attention for Online Inference
 <!-- [![Paper](http://img.shields.io/badge/paper-arxiv.2106.00050-B31B1B.svg)](https://arxiv.org/abs/2106.00050) -->
-[![Python](http://img.shields.io/badge/Python-3.9-0472B2.svg)]()
-[![Framework](https://img.shields.io/badge/Built_to-Ride-643DD9.svg)](https://github.com/LukasHedegaard/ride)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 
-This repository contains the official implementation of [Continual Transformers (CoT)](https://arxiv.org/abs/my-id). 
+Official implementation of [Continual Transformers](https://arxiv.org/abs/my-id) including ready-to-use modules for [Continual Inference](https://github.com/LukasHedegaard/continual-inference).
 
->📋  Include a graphic
+<div align="center">
+  <img src="figures/CoReDotProductAttention.svg" width="500">
+  <br>
+  <div align="left">
+  Fig. 1: Continual Retroactive Dot-Product Attention. 
+  The query (Q), key (K), and value (V) matrices are aggregated over time by caching the step vectors q_n, k_n, and v_n in a FIFO queue. During each step, only the entries of A associated with q_n, k_n, and the oldest K step, k_o are computed. 
+  The diagonal entries of the row-normalisation matrix D as well as the AV can be updated retroactively by subtracting features corresponding to k_o and adding features related to k_n to the cached outputs of the previous step, D_{mem} and AV_{mem}, respectively.
+  </div>
+  <br>
+</div>
+
+<div align="center">
+  <img src="figures/CoSiDotProductAttention.png" width="500">
+  <br>
+  <div align="left">
+  Fig. 2: Continual Single-Output Dot-Product Attention. 
+        The key (K) and value (V) matrices are aggregated over time by caching the step vectors k_n and v_n in a FIFO queue. During each step, only the attention output associated with q is computed.
+  </div>
+  <br>
+</div>
 
 
 ## Setup
 
-Install main requirements from project root:
+Continual Transformers and its modules can be installed in in your project using:
 ```setup
-pip install -e .
+pip install git+https://github.com/LukasHedegaard/continual-transformers.git
 ```
 
 
-## Training
+## Experiments and results
+The experiment code-base is split into seperate repositories for [Online Action Detection](https://github.com/LukasHedegaard/CoOadTR) and [Online Audio Classification](https://gitlab.au.dk/maleci/continual-transformer-audio-classification). Below, we present a summary of result from the paper. 
 
-To train the model(s) in the paper, run this command:
+<div align="center">
+  <img src="figures/Table6.png" width="500">
+</div>
 
-```train
-python train.py --input-data <path_to_data> --alpha 10 --beta 20
-```
 
->📋  Describe how to train the models, with example commands on how to train the models in your paper, including the full training procedure and appropriate hyperparameters.
+<div align="center">
+  <br>
+  <img src="figures/Table7.png" width="450">
+</div>
 
-## Evaluation
 
-To evaluate my model on ImageNet, run:
 
-```eval
-python eval.py --model-file mymodel.pth --benchmark imagenet
-```
 
->📋  Describe how to evaluate the trained models on benchmarks reported in the paper, give commands that produce the results (section below).
-
-## Pre-trained Models
-
-You can download pretrained models here:
-
-- [My awesome model](https://drive.google.com/mymodel.pth) trained on ImageNet using parameters x,y,z. 
-
->📋  Give a link to where/how the pretrained models can be downloaded and how they were trained (if applicable).  Alternatively you can have an additional column in your results table with a link to the models.
-
-## Results
-
-Our model achieves the following performance on :
-
-### [Image Classification on ImageNet](https://paperswithcode.com/sota/image-classification-on-imagenet)
-
-| Model name         | Top 1 Accuracy  | Top 5 Accuracy |
-| ------------------ |---------------- | -------------- |
-| My awesome model   |     85%         |      95%       |
-
->📋  Include a table of results from your paper, and link back to the leaderboard for clarity and context. If your main result is a figure, include that figure and link to the command or notebook to reproduce it. 
 
 
 ## Citation   
 ```
-@article{tbd,
-  title={tbd},
-  author={tbd},
-  journal={tbd},
-  year={tbd}
+@article{hedegaard2022cotrans,
+  title={Continual Transformers: Redundancy-Free Attention for Online Inference},
+  author={Lukas Hedegaard and Alexandros Iosifidis},
+  journal={preprint, arXiv:XXXX.XXXXXX},
+  year={2022}
 }
 ```
 
