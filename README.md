@@ -1,6 +1,7 @@
 # Continual Transformers: Redundancy-Free Attention for Online Inference
 [![Paper](http://img.shields.io/badge/paper-arxiv.2106.00050-B31B1B.svg)](https://arxiv.org/abs/4118484)
 
+> Paper will be published January 19th on ArXiv
 
 Official implementation of [Continual Transformers](https://arxiv.org/abs/my-id) including ready-to-use modules for [Continual Inference](https://github.com/LukasHedegaard/continual-inference).
 
