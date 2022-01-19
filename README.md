@@ -1,9 +1,7 @@
 # Continual Transformers: Redundancy-Free Attention for Online Inference
-[![Paper](http://img.shields.io/badge/paper-arxiv.2106.00050-B31B1B.svg)](https://arxiv.org/abs/4118484)
+[![Paper](http://img.shields.io/badge/paper-arxiv.2201.06268-B31B1B.svg)](http://arxiv.org/abs/2201.06268)
 
-> Paper will be published January 19th on ArXiv
-
-Official implementation of [Continual Transformers](https://arxiv.org/abs/my-id) including ready-to-use modules for [Continual Inference](https://github.com/LukasHedegaard/continual-inference).
+Official implementation of [Continual Transformers](http://arxiv.org/abs/2201.06268) including ready-to-use modules for [Continual Inference](https://github.com/LukasHedegaard/continual-inference).
 
 <div align="center">
   <img src="figures/CoReDotProductAttention.svg" width="500">
@@ -58,7 +56,7 @@ The experiment code-base is split into seperate repositories for [Online Action 
 @article{hedegaard2022cotrans,
   title={Continual Transformers: Redundancy-Free Attention for Online Inference},
   author={Lukas Hedegaard and Alexandros Iosifidis},
-  journal={preprint, arXiv:4118484},
+  journal={preprint, arXiv:2201.06268},
   year={2022}
 }
 ```
