@@ -4,7 +4,7 @@
 Official implementation of [Continual Transformers](http://arxiv.org/abs/2201.06268) including ready-to-use modules for [Continual Inference](https://github.com/LukasHedegaard/continual-inference).
 
 <div align="center">
-  <img src="figures/CoReDotProductAttention.svg" width="500">
+  <img src="figures/CoReDotProductAttention.png" width="500">
   <br>
   <div align="left">
   Fig. 1: Continual Retroactive Dot-Product Attention. 
