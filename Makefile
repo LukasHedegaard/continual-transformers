@@ -1,3 +1,4 @@
+SHELL:=/bin/bash
 .PHONY: clean test
 
 #################################################################################
@@ -38,6 +39,12 @@ clean:
 test:
 	@echo ⚡⚡⚡ Testing ⚡⚡⚡
 	python -m pytest --cov continual_transformers --cov-report term-missing 
+
+
+## Upload to codecov.io
+codecov:
+	$(eval CODECOV_TOKEN := $(shell grep CODECOV_TOKEN .env | cut -d '=' -f2))
+	@CODECOV_TOKEN=$(CODECOV_TOKEN) bash <(curl -s https://codecov.io/bash)
 
 
 ## Lint the code
