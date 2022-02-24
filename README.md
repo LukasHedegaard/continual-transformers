@@ -14,7 +14,7 @@
     <img src="https://pepy.tech/badge/continual-transformers/month" height="20">
   </a> -->
   <a href="https://codecov.io/gh/LukasHedegaard/continual-transformers">
-    <img src="https://codecov.io/gh/LukasHedegaard/continual-transformers/branch/main/graph/badge.svg?token=XW1UQZSEOG"/>
+    <img src="https://codecov.io/gh/LukasHedegaard/continual-transformers/branch/main/graph/badge.svg?token=8MPUM9234U"/>
   </a>
   <a href="https://opensource.org/licenses/Apache-2.0">
     <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" height="20">
