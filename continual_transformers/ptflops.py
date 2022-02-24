@@ -8,7 +8,12 @@ logger = getLogger(__name__)
 
 def _register_ptflops():
     try:
-        from ptflops import flops_counter as fc
+        import ptflops
+        
+        if hasattr(ptflops, "pytorch_ops"):  # >= v0.6.8
+            fc = ptflops.pytorch_ops
+        else:  # < v0.6.7
+            fc = ptflops.flops_counter
 
         def get_hook(Module):
             def hook(module, input, output):
