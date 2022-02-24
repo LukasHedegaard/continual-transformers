@@ -1,5 +1,31 @@
 # Continual Transformers: Redundancy-Free Attention for Online Inference
-[![Paper](http://img.shields.io/badge/paper-arxiv.2201.06268-B31B1B.svg)](http://arxiv.org/abs/2201.06268)
+
+<div align="left">
+  <!-- <a href="https://pypi.org/project/continual-transformers/">
+    <img src="https://img.shields.io/pypi/pyversions/continual-transformers" height="20" >
+  </a> -->
+  <a href="http://arxiv.org/abs/2201.06268">
+    <img src="http://img.shields.io/badge/paper-arxiv.2201.06268-B31B1B.svg" height="20" >
+  </a>
+  <!-- <a href="https://badge.fury.io/py/continual-transformers">
+    <img src="https://badge.fury.io/py/continual-transformers.svg" height="20" >
+  </a> -->
+  <!-- <a href="https://pepy.tech/project/continual-transformers">
+    <img src="https://pepy.tech/badge/continual-transformers/month" height="20">
+  </a> -->
+  <a href="https://codecov.io/gh/LukasHedegaard/continual-transformers">
+    <img src="https://codecov.io/gh/LukasHedegaard/continual-transformers/branch/main/graph/badge.svg?token=XW1UQZSEOG"/>
+  </a>
+  <a href="https://www.codefactor.io/repository/github/lukashedegaard/continual-transformers/overview/main">
+    <img src="https://www.codefactor.io/repository/github/lukashedegaard/continual-transformers/badge/main" alt="CodeFactor" />
+  </a>
+  <a href="https://opensource.org/licenses/Apache-2.0">
+    <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" height="20">
+  </a>
+  <a href="https://github.com/psf/black">
+    <img src="https://img.shields.io/badge/code%20style-black-000000.svg" height="20">
+  </a>
+</div>
 
 Official implementation of [Continual Transformers](http://arxiv.org/abs/2201.06268) including ready-to-use modules for [Continual Inference](https://github.com/LukasHedegaard/continual-inference).
 
