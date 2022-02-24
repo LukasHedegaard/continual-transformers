@@ -54,7 +54,7 @@ def test_multi_head_attention():
 
     # Forward steps gives same output for full sequence
     attn_output3 = comha.forward_steps(query, key, value)
-    assert torch.allclose(attn_output, attn_output3)
+    assert torch.allclose(attn_output, attn_output3, atol=1e-6)
 
     # Initialise, then use forward_step
     comha.clean_state()
