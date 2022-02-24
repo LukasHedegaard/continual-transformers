@@ -61,7 +61,7 @@ def test_multi_head_attention():
     attn_output_dummy = comha.forward_steps(query[:-1], key[:-1], value[:-1])
     assert isinstance(attn_output_dummy, TensorPlaceholder)
     attn_output4 = comha.forward_step(query[-1], key[-1], value[-1])
-    assert torch.allclose(attn_output, attn_output4)
+    assert torch.allclose(attn_output, attn_output4, atol=1e-6)
 
     # Shift query, key and value by a time-step
     query_step = torch.randn((N, E))
@@ -80,7 +80,7 @@ def test_multi_head_attention():
 
     # Continual MHA should yield the same result by using query_step, key_step, and value_step
     attn_output_next2 = comha.forward_step(query_step, key_step, value_step)
-    assert torch.allclose(attn_output_next, attn_output_next2)
+    assert torch.allclose(attn_output_next, attn_output_next2, atol=1e-6)
 
 
 def test_scaled_dot_product_attention_step():
