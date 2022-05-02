@@ -40,7 +40,7 @@ def test_CoReTransformerEncoder():
 
     o_step = enc.forward_step(query[:, :, -1])
 
-    assert torch.allclose(o, o_step)
+    assert torch.allclose(o, o_step, atol=1e-6)
 
     # Forward steps
     enc.clean_state()
