@@ -46,7 +46,7 @@ def test_CoReTransformerEncoder():
     enc.clean_state()
     o_steps = enc.forward_steps(query)
 
-    assert torch.allclose(o, o_steps.squeeze(2))
+    assert torch.allclose(o, o_steps.squeeze(2), atol=1e-6)
 
     # FLOPs
     flops, _ = get_model_complexity_info(
