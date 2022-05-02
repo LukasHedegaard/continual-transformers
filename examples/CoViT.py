@@ -3,9 +3,9 @@ import torch
 from torch import nn
 
 from continual_transformers import (
-    CircularPositionalEncoding,
     CoReSiTransformerEncoder,
     CoSiTransformerEncoder,
+    RecyclingPositionalEncoding,
 )
 
 
@@ -62,7 +62,7 @@ def CoVisionTransformer(
     assert embedding_dim % num_heads == 0
 
     linear_encoding = co.Linear(input_dim, embedding_dim, channel_dim=1)
-    position_encoding = CircularPositionalEncoding(
+    position_encoding = RecyclingPositionalEncoding(
         embedding_dim,
         int(embedding_dim * 1.0),  # Change num pos enc to cycle between
         forward_update_index_steps=1,

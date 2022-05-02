@@ -162,16 +162,16 @@ def multi_head_attention_forward_step(  # noqa: C901
             b_v,
         )
 
-    # add bias along batch dimension (currently second) TODO: Handle this branch
+    # add bias along batch dimension (currently second)
     if bias_k is not None and bias_v is not None:
         assert static_k is None, "bias cannot be added to static key."
         assert static_v is None, "bias cannot be added to static value."
         k = torch.cat([k, bias_k.repeat(1, bsz, 1)])
         v = torch.cat([v, bias_v.repeat(1, bsz, 1)])
-        if attn_mask is not None:
-            attn_mask = F.pad(attn_mask, (0, 1))
-        if key_padding_mask is not None:
-            key_padding_mask = F.pad(key_padding_mask, (0, 1))
+        # if attn_mask is not None: TODO: Handle these branches
+        #     attn_mask = F.pad(attn_mask, (0, 1))
+        # if key_padding_mask is not None:
+        #     key_padding_mask = F.pad(key_padding_mask, (0, 1))
 
     # reshape q, k, v for multihead attention and make em batch first
     q = q.contiguous().view(tgt_len, bsz * num_heads, head_dim).transpose(0, 1)
@@ -181,31 +181,31 @@ def multi_head_attention_forward_step(  # noqa: C901
     v = v.contiguous().view(-1, bsz * num_heads, head_dim).transpose(0, 1)
 
     # update source sequence length after adjustments
-    src_len = k.size(1)
+    # src_len = k.size(1)
 
     # merge key padding and attention masks
-    if key_padding_mask is not None:  # TODO: Handle this branch
-        assert key_padding_mask.shape == (
-            bsz,
-            src_len,
-        ), f"expecting key_padding_mask shape of {(bsz, src_len)}, but got {key_padding_mask.shape}"
-        key_padding_mask = (
-            key_padding_mask.view(bsz, 1, 1, src_len)
-            .expand(-1, num_heads, -1, -1)
-            .reshape(bsz * num_heads, 1, src_len)
-        )
-        if attn_mask is None:
-            attn_mask = key_padding_mask
-        elif attn_mask.dtype == torch.bool:
-            attn_mask = attn_mask.logical_or(key_padding_mask)
-        else:
-            attn_mask = attn_mask.masked_fill(key_padding_mask, float("-inf"))
+    # if key_padding_mask is not None:  # TODO: Handle this branch
+    #     assert key_padding_mask.shape == (
+    #         bsz,
+    #         src_len,
+    #     ), f"expecting key_padding_mask shape of {(bsz, src_len)}, but got {key_padding_mask.shape}"
+    #     key_padding_mask = (
+    #         key_padding_mask.view(bsz, 1, 1, src_len)
+    #         .expand(-1, num_heads, -1, -1)
+    #         .reshape(bsz * num_heads, 1, src_len)
+    #     )
+    #     if attn_mask is None:
+    #         attn_mask = key_padding_mask
+    #     elif attn_mask.dtype == torch.bool:
+    #         attn_mask = attn_mask.logical_or(key_padding_mask)
+    #     else:
+    #         attn_mask = attn_mask.masked_fill(key_padding_mask, float("-inf"))
 
     # convert mask to float  # TODO: Handle this branch
-    if attn_mask is not None and attn_mask.dtype == torch.bool:
-        new_attn_mask = torch.zeros_like(attn_mask, dtype=torch.float)
-        new_attn_mask.masked_fill_(attn_mask, float("-inf"))
-        attn_mask = new_attn_mask
+    # if attn_mask is not None and attn_mask.dtype == torch.bool:
+    #     new_attn_mask = torch.zeros_like(attn_mask, dtype=torch.float)
+    #     new_attn_mask.masked_fill_(attn_mask, float("-inf"))
+    #     attn_mask = new_attn_mask
 
     # adjust dropout probability
     if not training:
