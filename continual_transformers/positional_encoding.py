@@ -79,7 +79,8 @@ class CyclicPositionalEncoding(nn.Module):
             time += 1
             index = (arange + i + num_embeddings) % num_embeddings
             pattern_sum += pattern.gather(0, index.view(-1, 1).expand_as(pattern))
-        self.pattern = 1.0 / time * pattern_sum - pattern.mean(0)
+        pattern = 1.0 / time * pattern_sum - pattern.mean(0)
+        self.register_buffer("pattern", pattern)
 
     def forward(self, input: Tensor) -> Tensor:
         return self.pattern[input]
