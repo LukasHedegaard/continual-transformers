@@ -1,21 +1,7 @@
 # Continual Transformers: Redundancy-Free Attention for Online Inference
 
 <div align="left">
-  <!-- <a href="https://pypi.org/project/continual-transformers/">
-    <img src="https://img.shields.io/pypi/pyversions/continual-transformers" height="20" >
-  </a> -->
-  <a href="http://arxiv.org/abs/2201.06268">
-    <img src="http://img.shields.io/badge/paper-arxiv.2201.06268-B31B1B.svg" height="20" >
-  </a>
-  <!-- <a href="https://badge.fury.io/py/continual-transformers">
-    <img src="https://badge.fury.io/py/continual-transformers.svg" height="20" >
-  </a> -->
-  <!-- <a href="https://pepy.tech/project/continual-transformers">
-    <img src="https://pepy.tech/badge/continual-transformers/month" height="20">
-  </a> -->
-  <a href="https://codecov.io/gh/LukasHedegaard/continual-transformers">
-    <img src="https://codecov.io/gh/LukasHedegaard/continual-transformers/branch/main/graph/badge.svg?token=8MPUM9234U"/>
-  </a>
+
   <a href="https://opensource.org/licenses/Apache-2.0">
     <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" height="20">
   </a>
@@ -24,7 +10,7 @@
   </a>
 </div>
 
-Official implementation of [Continual Transformers](http://arxiv.org/abs/2201.06268) including ready-to-use modules for [Continual Inference](https://github.com/LukasHedegaard/continual-inference).
+Official implementation of _Continual Transformers_ including ready-to-use modules for Continual Inference.
 
 <div align="center">
   <img src="figures/CoReDotProductAttention.png" width="500">
@@ -50,40 +36,17 @@ Official implementation of [Continual Transformers](http://arxiv.org/abs/2201.06
 
 ## Setup
 
-Continual Transformers and its modules can be installed in in your project using:
-```setup
-pip install git+https://github.com/LukasHedegaard/continual-transformers.git
+Continual Transformers and its modules can be installed using:
+```bash
+pip install -e .[dev]
+```
+
+## Tests
+Run unit tests with coverage report:
+```bash
+python -m pytest --cov continual_transformers --cov-report term-missing 
 ```
 
 
 ## Experiments and results
-The experiment code-base is split into seperate repositories for [Online Action Detection](https://github.com/LukasHedegaard/CoOadTR) and [Online Audio Classification](https://gitlab.au.dk/maleci/continual-transformer-audio-classification). Below, we present a summary of result from the paper. 
-
-<div align="center">
-  <img src="figures/Table6.png" width="500">
-</div>
-
-
-<div align="center">
-  <br>
-  <img src="figures/Table7.png" width="450">
-</div>
-
-
-
-
-
-
-## Citation   
-```
-@article{hedegaard2022cotrans,
-  title={Continual Transformers: Redundancy-Free Attention for Online Inference},
-  author={Lukas Hedegaard and Alexandros Iosifidis},
-  journal={preprint, arXiv:2201.06268},
-  year={2022}
-}
-```
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md)
+The experiment code-base is split into seperate repositories for Online Action Detection and Online Audio Classification, which are supplied as seperate repositories in the supplemental material.
