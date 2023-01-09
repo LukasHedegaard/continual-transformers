@@ -1,2 +1,2 @@
-continual-inference
+continual-inference<1.0
 torch>=1.9
