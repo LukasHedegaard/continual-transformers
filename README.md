@@ -79,8 +79,8 @@ The experiment code-base is split into seperate repositories for [Online Action 
 @article{hedegaard2022cotrans,
   title={Continual Transformers: Redundancy-Free Attention for Online Inference},
   author={Lukas Hedegaard and Alexandros Iosifidis},
-  journal={preprint, arXiv:2201.06268},
-  year={2022}
+  journal={International Conference on Learning Representations (ICLR)},
+  year={2023}
 }
 ```
 
